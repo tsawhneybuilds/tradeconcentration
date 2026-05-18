@@ -1,0 +1,47 @@
+# Ignore everything by default. This repo should publish code and Markdown,
+# while keeping raw data and generated artifacts local.
+*
+
+# Allow directory traversal for the opt-in rules below.
+!*/
+
+# Repository metadata.
+!.gitignore
+
+# Code and dependency metadata.
+!*.py
+!**/*.py
+!requirements.txt
+
+# Markdown documentation/notes.
+!*.md
+!**/*.md
+
+# Raw and generated data must stay local.
+data/raw/
+data/processed/
+*.csv
+*.tsv
+*.parquet
+*.json
+*.gz
+*.zip
+*.part
+*.db
+*.sqlite
+*.pkl
+
+# Non-code source/reference artifacts.
+*.pdf
+*.txt
+!requirements.txt
+*.png
+*.jpg
+*.jpeg
+*.svg
+*.dot
+
+# Local/runtime noise.
+__pycache__/
+*.py[cod]
+.DS_Store
