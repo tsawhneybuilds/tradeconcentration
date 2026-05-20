@@ -1,7 +1,10 @@
 pandas
 numpy
 pyarrow
+duckdb
 matplotlib
 seaborn
+tabulate
 requests
 comtradeapicall
+psutil

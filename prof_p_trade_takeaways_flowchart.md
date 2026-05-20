@@ -31,7 +31,7 @@ flowchart TD
     end
 
     subgraph PH["Prof P hypotheses"]
-      PH1["High-unit-value goods: aircraft, autos, parts"]
+      PH1["Oil and high-unit-value/lumpy goods: aircraft, precious metals, ships, arms"]
       PH2["Oil and petroleum drive some import concentration"]
       PH3["Fragmented production: few component imports support few final exports"]
       PH4["Gravity: partner size, distance, and market-entry costs"]
@@ -44,7 +44,7 @@ flowchart TD
       TQ3["Are small-country concentration patterns mechanical?"]
       TQ4["Are top trade partners simply the biggest or nearest partners?"]
       TQ5["Are the biggest import and export partners usually the same?"]
-      TQ6["Which top products are oil, high-unit-value goods, components, or policy-sensitive goods?"]
+      TQ6["Which top products are oil, high-unit-value/lumpy goods, components, or policy-sensitive goods?"]
     end
 
     subgraph TH["Your hypotheses"]
@@ -72,7 +72,7 @@ flowchart TD
       X1["Exercise 1: update Prof P facts beyond 2001 across many countries and years"]
       X2["Exercise 2: measure per-product source concentration for imports"]
       X3["Exercise 3: test whether low-value products go to nearby markets while high-value products go global"]
-      X4["Exercise 4: classify top products by oil, high-unit-value, components, and final goods"]
+      X4["Exercise 4: classify top products by oil, high-unit-value/lumpy goods, components, and final goods"]
       X5["Exercise 5: India panel: product concentration, partner concentration, and product-partner concentration"]
       X6["Exercise 6: firm test: product revenue concentration or conglomerate status predicts exporting"]
       X7["Exercise 7: policy test using DGFT and global antidumping data"]
@@ -174,7 +174,7 @@ The flow from the notes and papers is:
 1. Extend Prof P and Bagaria beyond 2001: compute Gini/top-share measures for products, partners, and product-partner cells by country-year.
 2. For each HS product, compute whether imports come from one dominant source country or many source countries.
 3. Test your nearby-market hypothesis: are small-value or experimental products exported mainly to nearby countries, while high-value specialized products go to many markets?
-4. Classify top products into oil/energy, high-unit-value final goods, components/intermediates, and ordinary goods.
+4. Classify top products into oil/energy, high-unit-value/lumpy goods, components/intermediates, and ordinary goods.
 5. For India, compare concentration trends with China, South Korea, Japan, the United States, Germany, and other peers.
 6. If firm data are available, regress export participation or export intensity on firm size, product focus, conglomerate status, productivity, and product concentration.
 7. Use antidumping or DGFT policy data to test whether protectionist actions shift concentration toward protected sectors or away from globally competitive sectors.
