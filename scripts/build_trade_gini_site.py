@@ -303,6 +303,19 @@ def hypothesis_grid(cards: list[str]) -> str:
     return f'<div class="hypothesis-grid">{"".join(cards)}</div>'
 
 
+def evidence_note(question: str, how: str, supports: str, result: str) -> str:
+    return f"""
+      <article class="evidence-note">
+        <dl>
+          <dt>Question this answers</dt><dd>{question}</dd>
+          <dt>How to read it</dt><dd>{how}</dd>
+          <dt>Supports the hypothesis if</dt><dd>{supports}</dd>
+          <dt>Current result</dt><dd>{result}</dd>
+        </dl>
+      </article>
+    """
+
+
 def source_link(path: Path) -> str:
     return path.relative_to(ROOT).as_posix()
 
@@ -953,6 +966,54 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             <li>Median export product Gini rises from <strong>{dec(exp_1988.get("product_gini"))}</strong> in 1988 to <strong>{dec(exp_2025.get("product_gini"))}</strong> in 2025; import product Gini rises from <strong>{dec(imp_1988.get("product_gini"))}</strong> to <strong>{dec(imp_2025.get("product_gini"))}</strong>.</li>
           </ul>
         """,
+        "map_note": evidence_note(
+            "Are high trade Ginis broad across countries, or driven by only a few outliers?",
+            "Select flow, metric, and year; darker countries have higher concentration for that country-year-flow.",
+            "Many countries remain dark across the panel rather than only one or two outliers driving the picture.",
+            "High concentration appears across much of the 33-country sample, not just one country.",
+        ),
+        "line_note": evidence_note(
+            "Is concentration persistent over time within countries?",
+            "Select countries, flow, and metric; high, fairly flat lines mean concentration persists within countries.",
+            "Country lines stay high across decades rather than collapsing after the 2001 cross-section.",
+            "Many countries remain highly concentrated across decades, supporting the extension beyond 2001.",
+        ),
+        "top_share_note": evidence_note(
+            "Are high Ginis economically meaningful in share terms?",
+            "Compare median top-item and top-five shares by product versus partner.",
+            "The largest products or partners account for substantial shares of trade, not just high index values.",
+            "Top partners and products account for large trade shares, so the Gini is not just an abstract index.",
+        ),
+        "top_frequency_note": evidence_note(
+            "Which products or partners repeatedly appear in countries' top-five baskets?",
+            "Higher country counts mean the item is commonly important across reporters in the latest year.",
+            "A small set of products or partners appears repeatedly across many countries.",
+            "Repeated appearances point to common concentration sources like major destinations, energy, gold, vehicles, medicines, and electronics.",
+        ),
+        "loo_note": evidence_note(
+            "Which top-five items actually raise Gini the most?",
+            "Positive values mean removing the item lowers Gini, so that item is concentration-raising.",
+            "The same high-share products or partners have positive leave-one-out contributions.",
+            "Large partners and lumpy goods explain part of concentration, but not all of it.",
+        ),
+        "lumpy_note": evidence_note(
+            "Does concentration disappear after removing oil, gold/precious metals, aircraft, ships, and arms?",
+            "Compare baseline Gini with exclusion variants and the trade share removed.",
+            "The lumpy-product story would be strong if Gini fell sharply after these exclusions.",
+            "Concentration falls only modestly, so lumpy products matter but do not explain the whole pattern.",
+        ),
+        "benchmark_note": evidence_note(
+            "Is high concentration just what we would expect from sparse product counts or broad HS2 structure?",
+            "Compare actual Ginis with the active-count-only and HS2-preserving null benchmarks.",
+            "Actual Ginis sit well above the benchmark distributions.",
+            "Actual Ginis remain above both benchmarks; HS2 preservation is a conservative benchmark, not complete randomization.",
+        ),
+        "growth_note": evidence_note(
+            "Do more concentrated export baskets predict different later growth patterns?",
+            "Compare annualized growth across concentration buckets and horizons.",
+            "High-concentration buckets grow meaningfully differently from low-concentration buckets.",
+            "This is descriptive only; it is useful for scoping follow-up questions, not a causal claim.",
+        ),
         "top_share_table": table_rows(
             ex1["top5_latest_medians"],
             [
@@ -1138,13 +1199,14 @@ def nav(active: str) -> str:
 
 
 def layout(title: str, page: str, body: str) -> str:
+    build_stamp = now_utc().replace("-", "").replace(":", "").replace("+", "").replace("T", "").replace("Z", "")
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{title}</title>
-  <link rel="stylesheet" href="assets/site.css">
+  <link rel="stylesheet" href="assets/site.css?v={build_stamp}">
 </head>
 <body data-page="{page}">
   <header class="site-header">
@@ -1160,8 +1222,8 @@ def layout(title: str, page: str, body: str) -> str:
     <p>Generated from local research outputs on {now_utc()}.</p>
   </footer>
   <script src="assets/vendor/plotly.min.js"></script>
-  <script src="assets/site-data.js"></script>
-  <script src="assets/site.js"></script>
+  <script src="assets/site-data.js?v={build_stamp}"></script>
+  <script src="assets/site.js?v={build_stamp}"></script>
 </body>
 </html>
 """
@@ -1237,10 +1299,17 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
         <div class="controls compact">
           <label>Flow <select id="map-flow"><option>Exports</option><option>Imports</option></select></label>
           <label>Metric <select id="map-metric"><option value="product_gini">Product Gini</option><option value="partner_gini">Partner Gini</option><option value="product_partner_cell_gini">Product-partner cell Gini</option></select></label>
-          <label>Year <select id="map-year"></select></label>
+          <div class="year-control">
+            <div class="year-control-head"><span>Year</span><output id="map-year-label" for="map-year-slider"></output></div>
+            <input id="map-year-slider" type="range" min="1988" max="2025" step="1">
+            <div class="year-range-labels"><span id="map-year-min"></span><span id="map-year-max"></span></div>
+            <select id="map-year" class="sr-only" aria-label="Map year"></select>
+            <p class="control-note">Drag the year bar to see how country Ginis change over time.</p>
+          </div>
         </div>
       </div>
       <div id="world-map" class="chart tall"></div>
+      {context["map_note"]}
       <div class="tool-grid">
         <aside class="selector-panel">
           <div class="selector-actions">
@@ -1257,6 +1326,7 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
           </div>
           <div id="country-lines" class="chart tall"></div>
           <div id="line-detail" class="detail-box">Click a line or map country to see country details.</div>
+          {context["line_note"]}
         </div>
       </div>
     </section>
@@ -1264,13 +1334,15 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
     <section class="section two-col" id="top-share-evidence">
       <article>
         <h2>Top-Share Evidence</h2>
-        <p>Ginis are high partly because the top products and partners carry large trade shares. The latest-year medians are large for both products and partners, matching the PDF note that the pattern does not disappear over time.</p>
+        <p>Ginis are high partly because the top products and partners carry large trade shares. “Top item” is the largest single product or partner in a country’s trade basket; “top five” is the combined share of the five largest products or partners. Partner top shares are higher because countries often trade with a small number of major destinations or sources, while product baskets contain thousands of HS6 items.</p>
         {context["top_share_table"]}
+        {context["top_share_note"]}
       </article>
       <article>
         <h2>Common Top-Five Items</h2>
         <p>These are the latest-year products or partners that appear most often in country top-five lists.</p>
         {context["top_frequency_table"]}
+        {context["top_frequency_note"]}
       </article>
     </section>
 
@@ -1284,6 +1356,7 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
         <figure><a class="figure-link" href="assets/figures/ex1_loo_all_reporters.png"><img src="assets/figures/ex1_loo_all_reporters.png" alt="Mean item leave-one-out Gini contribution across all reporters"></a><figcaption>All-reporter average: best for identifying broad, system-wide top-five items that raise concentration across the full latest-year reporter sample.</figcaption></figure>
         <figure><a class="figure-link" href="assets/figures/ex1_loo_top5_reporters.png"><img src="assets/figures/ex1_loo_top5_reporters.png" alt="Mean item leave-one-out Gini contribution where item is top five"></a><figcaption>Conditional average where the item is actually in a reporter's top five: best for mechanism spotting, but rare items can have large conditional effects.</figcaption></figure>
       </div>
+      {context["loo_note"]}
     </section>
 
     <section class="section" id="lumpy-exclusions">
@@ -1292,6 +1365,7 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
         <p>{context["lumpy_text"]}</p>
       </div>
       <div id="exclusion-chart" class="chart"></div>
+      {context["lumpy_note"]}
       {context["exclusion_table"]}
       <div class="figure-row">
         <figure><a class="figure-link" href="assets/figures/ex6_before_after.png"><img src="assets/figures/ex6_before_after.png" alt="Before and after export product Gini over time"></a><figcaption>Export product Gini before and after full lumpy-product exclusion.</figcaption></figure>
@@ -1305,6 +1379,7 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
         <p>Exercise 10 is best read as a ladder of benchmarks. The active-count-only null is a loose benchmark. The HS2-preserving null is more conservative because it keeps broad HS2 sector totals intact, so it is explicitly not complete randomization.</p>
       </div>
       <div id="benchmark-chart" class="chart"></div>
+      {context["benchmark_note"]}
       {context["benchmark_table"]}
       <div class="figure-row">
         <figure><a class="figure-link" href="assets/figures/ex10_actual_vs_benchmark.png"><img src="assets/figures/ex10_actual_vs_benchmark.png" alt="Actual versus HS2-preserved benchmark Gini"></a><figcaption>Actual product Ginis remain above the HS2-preserved random benchmark.</figcaption></figure>
@@ -1318,6 +1393,7 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
         <p>This local Exercise 2 output is included as context only: it buckets export concentration states and reports subsequent growth. It should not be read as causal evidence.</p>
       </div>
       {context["growth_table"]}
+      {context["growth_note"]}
     </section>
     """
 
@@ -1651,6 +1727,32 @@ main { max-width: 1160px; margin: 0 auto; padding: 24px 22px 56px; }
   background: #f8faf9;
 }
 .evidence-links a:hover { border-color: var(--accent); }
+.evidence-note {
+  border: 1px solid var(--line);
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  background: #f8fafc;
+  padding: 12px 14px;
+  margin: 12px 0 18px;
+}
+.evidence-note dl {
+  display: grid;
+  grid-template-columns: 170px minmax(0, 1fr);
+  gap: 6px 14px;
+  margin: 0;
+}
+.evidence-note dt {
+  color: var(--accent-dark);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.evidence-note dd {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+}
 .result-ladder {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -1719,6 +1821,48 @@ main { max-width: 1160px; margin: 0 auto; padding: 24px 22px 56px; }
   font-size: 13px;
   display: grid;
   gap: 4px;
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.year-control {
+  min-width: 280px;
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.year-control-head, .year-range-labels {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.year-control-head span {
+  font-weight: 600;
+}
+#map-year-label {
+  color: var(--ink);
+  font-weight: 700;
+  font-size: 18px;
+}
+input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.control-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
 }
 select, input[type="search"] {
   min-height: 38px;
@@ -1856,7 +2000,10 @@ figcaption {
   .hero h1, .page-title h1 { font-size: 32px; }
   .hero p, .page-title p { font-size: 16px; }
   .hypothesis-card dl { grid-template-columns: 1fr; gap: 4px; }
+  .evidence-note dl { grid-template-columns: 1fr; }
   .tool-section { padding: 14px; }
+  .controls { align-items: stretch; }
+  .controls label, .year-control { width: 100%; min-width: 0; }
   .chart, .chart.tall { min-height: 430px; }
   table { overflow-x: auto; }
 }
@@ -1905,6 +2052,19 @@ def site_js() -> str:
     return (DATA.exercise1?.panel || []).filter((row) => row.flow === flow && Number(row.year) === Number(year) && row[metric] !== null);
   }
 
+  function currentMapYear() {
+    return byId('map-year-slider')?.value || byId('map-year')?.value;
+  }
+
+  function setMapYear(value) {
+    const slider = byId('map-year-slider');
+    const select = byId('map-year');
+    const label = byId('map-year-label');
+    if (slider) slider.value = value;
+    if (select) select.value = value;
+    if (label) label.textContent = value;
+  }
+
   function selectedCountries() {
     return Array.from(document.querySelectorAll('.country-check:checked')).map((el) => el.value);
   }
@@ -1924,7 +2084,7 @@ def site_js() -> str:
     if (!node) return;
     const flow = byId('map-flow').value;
     const metric = byId('map-metric').value;
-    const year = byId('map-year').value;
+    const year = currentMapYear();
     const rows = rowsFor(flow, metric, year);
     const trace = {
       type: 'choropleth',
@@ -2022,15 +2182,39 @@ def site_js() -> str:
   function setupExtension() {
     const years = Array.from(new Set((DATA.exercise1?.panel || []).map((row) => row.year))).sort((a, b) => a - b);
     const yearSelect = byId('map-year');
+    const yearSlider = byId('map-year-slider');
+    const minYear = Math.min(...years);
+    const maxYear = Math.max(...years);
     years.forEach((year) => {
       const option = document.createElement('option');
       option.value = year;
       option.textContent = year;
-      if (year === Math.max(...years)) option.selected = true;
+      if (year === maxYear) option.selected = true;
       yearSelect.appendChild(option);
     });
+    if (yearSlider) {
+      yearSlider.min = minYear;
+      yearSlider.max = maxYear;
+      yearSlider.step = 1;
+      yearSlider.value = maxYear;
+      byId('map-year-min').textContent = minYear;
+      byId('map-year-max').textContent = maxYear;
+    }
+    setMapYear(maxYear);
     renderCountryList();
-    ['map-flow', 'map-metric', 'map-year'].forEach((id) => byId(id)?.addEventListener('change', renderMap));
+    ['map-flow', 'map-metric'].forEach((id) => byId(id)?.addEventListener('change', renderMap));
+    byId('map-year')?.addEventListener('change', (event) => {
+      setMapYear(event.target.value);
+      renderMap();
+    });
+    byId('map-year-slider')?.addEventListener('input', (event) => {
+      setMapYear(event.target.value);
+      renderMap();
+    });
+    byId('map-year-slider')?.addEventListener('change', (event) => {
+      setMapYear(event.target.value);
+      renderMap();
+    });
     ['line-flow', 'line-metric'].forEach((id) => byId(id)?.addEventListener('change', renderLines));
     byId('country-search')?.addEventListener('input', filterCountryList);
     byId('select-all-countries')?.addEventListener('click', () => {
