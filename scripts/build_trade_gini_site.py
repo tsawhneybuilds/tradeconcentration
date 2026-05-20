@@ -1238,6 +1238,7 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       <div class="hero-actions">
         <a class="button primary" href="extension.html">Explore the extension</a>
         <a class="button" href="imports.html">View import mechanisms</a>
+        <a class="button" href="#next-steps">Discuss next steps</a>
       </div>
     </section>
 
@@ -1253,11 +1254,28 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       {context["overview_cards"]}
     </section>
 
+    <section class="section two-col" id="sendable-brief">
+      <article>
+        <h2>Purpose of This Brief</h2>
+        <p>This brief is a concise empirical follow-up to the 2001 paper. It checks whether the concentration fact persists over time, whether it is mostly a lumpy-product artifact, and whether import concentration points to a processing-input mechanism.</p>
+        <ul class="callout-list">
+          <li><strong>Extension:</strong> the high product, partner, and product-partner concentration facts remain visible in the 33-country panel from 1988 to 2025.</li>
+          <li><strong>Robustness:</strong> removing oil, precious metals/gold, aircraft, ships, and arms lowers export concentration only modestly.</li>
+          <li><strong>Mechanisms:</strong> import concentration has energy, supplier-dominance, and input-output pieces, but the broad intermediate-processing story is weakened by the product-level Exercise 11 regressions.</li>
+        </ul>
+      </article>
+      <article class="note">
+        <h3>Discussion Ask</h3>
+        <p>The brief is organized to support a short follow-up conversation, not to claim the project is finished. The main question for a meeting is whether this extension is a useful summer direction and which parts should become formal paper evidence.</p>
+        <p>The strongest next step is to connect concentration to export dynamics: do concentrated countries grow by deepening current top products and partners, or by adding new products, destinations, and product-partner cells?</p>
+      </article>
+    </section>
+
     <section class="section two-col">
       <article>
         <h2>What This Version Covers</h2>
         <p>The site focuses on four pieces: the 1988-2025 extension of the 33-country concentration facts, lumpy-product exclusions, benchmark/null-model context, and import concentration mechanisms.</p>
-        <p>All numeric claims are recomputed from the local result tables. The PDF draft was used only as editorial guidance for organizing the brief.</p>
+        <p>All numeric claims are recomputed from the result tables used to generate this site, with selected CSVs available on the Methods page.</p>
       </article>
       <article class="note">
         <h3>How to read it</h3>
@@ -1265,10 +1283,32 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       </article>
     </section>
 
+    <section class="section" id="next-steps">
+      <div class="section-heading">
+        <h2>Next Question: Where Did Export Growth Come From?</h2>
+        <p>The current site establishes that concentration is persistent and then tests a few explanations. The next pass should ask how export baskets actually change after a concentrated base year.</p>
+      </div>
+      <div class="next-step-grid">
+        <article class="note">
+          <h3>Why this matters</h3>
+          <p>The more interesting follow-up is not only whether concentration is high, but whether high-concentration countries grow by intensifying existing strengths or by discovering new products and destinations.</p>
+        </article>
+        <article class="note">
+          <h3>What Exercise 12 looked like</h3>
+          <p>The Exercise 12 prototype is transition accounting, not a regression. It decomposes export growth into existing top items, existing non-top items, new items, and contractions across products, partners, and product-partner cells.</p>
+        </article>
+        <article class="note">
+          <h3>What to discuss next</h3>
+          <p>A meeting could decide which version is most useful: top-product persistence, destination upgrading, product-partner cell entry, or a growth decomposition that separates gross expansion from contraction and exit.</p>
+        </article>
+      </div>
+    </section>
+
     <section class="section link-grid">
       <a href="extension.html"><span>01</span><strong>Extending 2001</strong><small>World map, country lines, top-share facts, exclusions, and null benchmarks.</small></a>
       <a href="imports.html"><span>02</span><strong>Imports</strong><small>Energy, intermediates, dominant suppliers, and input-output linkages.</small></a>
       <a href="methods.html"><span>03</span><strong>Methods</strong><small>Data coverage, definitions, and downloadable CSVs.</small></a>
+      <a href="#next-steps"><span>04</span><strong>Next steps</strong><small>Growth transition accounting and questions for the next conversation.</small></a>
     </section>
     """
 
@@ -1276,7 +1316,6 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
     <section class="page-title">
       <div class="eyebrow">Extension of the 2001 cross-section</div>
       <h1>Concentration Persists Through the Full 1988-2025 Panel</h1>
-      <p>The main extension is visual and descriptive: keep the same broad country set, move from one year to a panel, and inspect whether the concentration facts are stable.</p>
     </section>
 
     <section class="section hypothesis-section">
@@ -1662,7 +1701,7 @@ main { max-width: 1160px; margin: 0 auto; padding: 24px 22px 56px; }
 .note { padding: 18px; }
 .link-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
   gap: 14px;
 }
 .link-grid a {
@@ -1788,6 +1827,12 @@ main { max-width: 1160px; margin: 0 auto; padding: 24px 22px 56px; }
 .interpretation-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 18px 0;
+}
+.next-step-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
   margin: 18px 0;
 }
@@ -1994,7 +2039,7 @@ figcaption {
 @media (max-width: 860px) {
   .header-inner, .tool-header, .section-heading { display: block; }
   nav { justify-content: flex-start; margin-top: 12px; }
-  .stat-grid, .two-col, .link-grid, .hypothesis-grid, .result-ladder, .interpretation-grid, .tool-grid, .figure-row, .download-grid {
+  .stat-grid, .two-col, .link-grid, .hypothesis-grid, .result-ladder, .interpretation-grid, .next-step-grid, .tool-grid, .figure-row, .download-grid {
     grid-template-columns: 1fr;
   }
   .hero h1, .page-title h1 { font-size: 32px; }
