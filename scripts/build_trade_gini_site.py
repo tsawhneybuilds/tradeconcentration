@@ -1399,7 +1399,6 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
     <section class="page-title">
       <div class="eyebrow">Import concentration mechanisms</div>
       <h1>Energy, Intermediates, Suppliers, and Input-Output Linkages</h1>
-      <p>The import exercises split the aggregate fact into components. The story is not one mechanism; energy is sharply concentrated, intermediates are large, and supplier concentration matters in narrower product channels.</p>
     </section>
 
     <section class="section hypothesis-section">
