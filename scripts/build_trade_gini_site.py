@@ -1099,7 +1099,7 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
                 ("label", "Import bin", "text"),
                 ("product_gini", "Median Product Gini within bin", "dec"),
                 ("top_1_product_share", "Median top-1 share", "pct"),
-                ("import_value_share", "Median value share", "pct"),
+                ("import_value_share", "Median import value share", "pct"),
                 ("product_gini_reduction_when_excluded", "Leave-one-out Gini effect", "dec"),
                 ("active_products", "Active HS6 products", "int"),
             ],
@@ -1416,6 +1416,9 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       <div class="section-heading">
         <h2>Exercise 3: Import Bins</h2>
         <p>Energy has the strongest within-bin Product Gini across HS6 products and a positive leave-one-bin-out contribution. Intermediates matter more by scale: they are a large part of the import bill and include specialized input categories where a few HS6 lines can carry meaningful value.</p>
+      </div>
+      <div class="note">
+        <p><strong>Import value share</strong> means the bin's share of a country's total import value in a country-year. <strong>Product Gini within bin</strong> measures concentration across HS6 products inside that bin. <strong>Top-1 product share</strong> is the largest HS6 product's share of that bin. <strong>Leave-one-out Gini effect</strong> is the change in overall import Product Gini when the bin is removed; positive values mean the bin raises concentration.</p>
       </div>
       <div id="import-bin-chart" class="chart"></div>
       {context["bin_table"]}
