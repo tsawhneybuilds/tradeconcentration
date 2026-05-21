@@ -84,9 +84,9 @@ DOWNLOADS = {
 
 FLOW_ORDER = ["Exports", "Imports"]
 METRIC_LABELS = {
-    "product_gini": "Product Gini",
-    "partner_gini": "Partner Gini",
-    "product_partner_cell_gini": "Product-partner cell Gini",
+    "product_gini": "Product Gini (HS6 products)",
+    "partner_gini": "Partner Gini (trade partners)",
+    "product_partner_cell_gini": "Product-partner cell Gini (HS6-by-partner cells)",
 }
 EXCLUSION_LABELS = {
     "baseline": "Baseline",
@@ -308,7 +308,6 @@ def evidence_note(question: str, how: str, supports: str, result: str) -> str:
       <article class="evidence-note">
         <dl>
           <dt>Question this answers</dt><dd>{question}</dd>
-          <dt>How to read it</dt><dd>{how}</dd>
           <dt>Supports the hypothesis if</dt><dd>{supports}</dd>
           <dt>Current result</dt><dd>{result}</dd>
         </dl>
@@ -803,10 +802,10 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
 
     overview_cards = f"""
       <div class="stat-grid">
-        <article class="stat-card"><span>Median export product Gini</span><strong>{dec(exp.get("product_gini"))}</strong><small>33-country panel, 1988-2025</small></article>
-        <article class="stat-card"><span>Median import product Gini</span><strong>{dec(imp.get("product_gini"))}</strong><small>same country-year panel</small></article>
-        <article class="stat-card"><span>Full lumpy exclusion</span><strong>{dec(full_excl.get("product_gini"))}</strong><small>export product Gini, from {dec(baseline.get("product_gini"))}</small></article>
-        <article class="stat-card"><span>Energy import bin Gini</span><strong>{dec(energy.get("product_gini"))}</strong><small>median top-1 share {pct(energy.get("top_1_product_share"))}</small></article>
+        <article class="stat-card"><span>Median export Product Gini</span><strong>{dec(exp.get("product_gini"))}</strong><small>across HS6 products, 1988-2025</small></article>
+        <article class="stat-card"><span>Median import Product Gini</span><strong>{dec(imp.get("product_gini"))}</strong><small>across HS6 products, same panel</small></article>
+        <article class="stat-card"><span>Full lumpy exclusion</span><strong>{dec(full_excl.get("product_gini"))}</strong><small>export Product Gini, from {dec(baseline.get("product_gini"))}</small></article>
+        <article class="stat-card"><span>Energy import-bin Product Gini</span><strong>{dec(energy.get("product_gini"))}</strong><small>within HS6 energy products; top-1 share {pct(energy.get("top_1_product_share"))}</small></article>
       </div>
     """
 
@@ -816,9 +815,9 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
                 "Framing question",
                 "Extending the 2001 concentration",
                 "Does the Panagariya-Bagaria concentration pattern persist when the same broad country set is followed across many years rather than one central cross-section?",
-                "Product, partner, and product-partner-cell Ginis stay high across countries and years.",
+                "Product Gini, Partner Gini, and Product-partner cell Gini stay high across countries and years.",
                 "The high concentration pattern disappears, flips, or depends mainly on one year/sample.",
-                f"Supports. In the 33-country 1988-2025 panel, median product Ginis are {dec(exp.get('product_gini'))} for exports and {dec(imp.get('product_gini'))} for imports, and the product-partner-cell medians are {dec(exp.get('product_partner_cell_gini'))} and {dec(imp.get('product_partner_cell_gini'))}.",
+                f"Supports. In the 33-country 1988-2025 panel, median Product Ginis across HS6 products are {dec(exp.get('product_gini'))} for exports and {dec(imp.get('product_gini'))} for imports, and median Product-partner cell Ginis across HS6-by-partner cells are {dec(exp.get('product_partner_cell_gini'))} and {dec(imp.get('product_partner_cell_gini'))}.",
                 [
                     ("Extension page", "extension.html#map-lines"),
                     ("Top shares", "extension.html#top-share-evidence"),
@@ -835,9 +834,9 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
                 "Exercise 1",
                 "Persistent aggregate concentration",
                 "Concentration is a persistent aggregate fact, not a one-year artifact.",
-                "Product/partner Ginis stay high across countries and years.",
+                "Product Gini and Partner Gini stay high across countries and years.",
                 "Concentration disappears or changes sharply by year/sample.",
-                f"Supports. Median export product Gini rises from {dec(exp_1988.get('product_gini'))} in 1988 to {dec(exp_2025.get('product_gini'))} in 2025; import product Gini rises from {dec(imp_1988.get('product_gini'))} to {dec(imp_2025.get('product_gini'))}. The top-share tables also show large latest-year top product and partner shares.",
+                f"Supports. Median export Product Gini across HS6 products rises from {dec(exp_1988.get('product_gini'))} in 1988 to {dec(exp_2025.get('product_gini'))} in 2025; import Product Gini rises from {dec(imp_1988.get('product_gini'))} to {dec(imp_2025.get('product_gini'))}. The top-share tables also show large latest-year top HS6-product and partner shares.",
                 [
                     ("Map and lines", "#map-lines"),
                     ("Top-share table", "#top-share-evidence"),
@@ -851,7 +850,7 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
                 "Concentration is mostly driven by oil, aircraft, precious metals/gold, ships, arms, or other obvious lumpy categories.",
                 "Ginis fall sharply after excluding these product groups.",
                 "Ginis remain high after the exclusions.",
-                f"Weakens the mostly-lumpy explanation. The full export-side exclusion lowers median product Gini only from {dec(baseline.get('product_gini'))} to {dec(full_excl.get('product_gini'))}, while removing a median {pct(full_excl.get('trade_share_removed'))} of trade value.",
+                f"Weakens the mostly-lumpy explanation. The full export-side exclusion lowers median Product Gini across HS6 products only from {dec(baseline.get('product_gini'))} to {dec(full_excl.get('product_gini'))}, while removing a median {pct(full_excl.get('trade_share_removed'))} of trade value.",
                 [
                     ("Exclusion table", "#lumpy-exclusions"),
                     ("Exclusion CSV", "assets/downloads/exercise_06_concentration_exclusions_all_years.csv"),
@@ -863,7 +862,7 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
                 "Observed concentration is higher than what would arise mechanically from scale, sparsity, active products, and broad HS2 sector composition.",
                 "Actual concentration sits well above simulated/random benchmarks for most countries and years.",
                 "Actual concentration is close to what the benchmark would generate.",
-                "Supports. Actual product Ginis sit above both the loose active-count-only benchmark and the conservative HS2-preserving benchmark. The HS2 benchmark is conditional, not complete randomization.",
+                "Supports. Actual Product Ginis across HS6 products sit above both the loose active-count-only benchmark and the conservative HS2-preserving benchmark. The HS2 benchmark is conditional, not complete randomization.",
                 [
                     ("Benchmark ladder", "#benchmark-ladder"),
                     ("Benchmark CSV", "assets/downloads/exercise_10_hs2_product_benchmark_all_years.csv"),
@@ -872,8 +871,8 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             hypothesis_card(
                 "Exercise 2",
                 "Growth-bucket context",
-                "Product/partner concentration predicts future export growth.",
-                "High-product/high-partner countries grow meaningfully differently from low-low countries.",
+                "Product-Gini and Partner-Gini concentration predict future export growth.",
+                "High-Product-Gini/high-Partner-Gini countries grow meaningfully differently from low-low countries.",
                 "Buckets show no meaningful growth differences.",
                 "Mixed/descriptive. The bucket table is useful context, but this site treats it as descriptive rather than causal evidence about growth.",
                 [
@@ -953,17 +952,17 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
         "summary_text": (
             f"The empirical extension keeps the 33-country Panagariya-Bagaria sample and expands the time "
             f"dimension to {data['metadata']['data_checks']['exercise_1']['year_min']}-"
-            f"{data['metadata']['data_checks']['exercise_1']['year_max']}. Median product Ginis are "
+            f"{data['metadata']['data_checks']['exercise_1']['year_max']}. Median Product Ginis across HS6 products are "
             f"{dec(exp.get('product_gini'))} for exports and {dec(imp.get('product_gini'))} for imports; "
-            f"the product-partner-cell medians are {dec(exp.get('product_partner_cell_gini'))} and "
+            f"the Product-partner cell Gini medians across HS6-by-partner cells are {dec(exp.get('product_partner_cell_gini'))} and "
             f"{dec(imp.get('product_partner_cell_gini'))}."
         ),
         "extension_takeaways": f"""
           <ul class="callout-list">
-            <li>Median product Gini: exports <strong>{dec(exp.get("product_gini"))}</strong>, imports <strong>{dec(imp.get("product_gini"))}</strong>.</li>
-            <li>Median partner Gini: exports <strong>{dec(exp.get("partner_gini"))}</strong>, imports <strong>{dec(imp.get("partner_gini"))}</strong>.</li>
-            <li>Median product-partner-cell Gini: exports <strong>{dec(exp.get("product_partner_cell_gini"))}</strong>, imports <strong>{dec(imp.get("product_partner_cell_gini"))}</strong>.</li>
-            <li>Median export product Gini rises from <strong>{dec(exp_1988.get("product_gini"))}</strong> in 1988 to <strong>{dec(exp_2025.get("product_gini"))}</strong> in 2025; import product Gini rises from <strong>{dec(imp_1988.get("product_gini"))}</strong> to <strong>{dec(imp_2025.get("product_gini"))}</strong>.</li>
+            <li>Product Gini measures concentration across HS6 products: exports <strong>{dec(exp.get("product_gini"))}</strong>, imports <strong>{dec(imp.get("product_gini"))}</strong>.</li>
+            <li>Partner Gini measures concentration across destination/source partners: exports <strong>{dec(exp.get("partner_gini"))}</strong>, imports <strong>{dec(imp.get("partner_gini"))}</strong>.</li>
+            <li>Product-partner cell Gini measures concentration across HS6-by-partner cells: exports <strong>{dec(exp.get("product_partner_cell_gini"))}</strong>, imports <strong>{dec(imp.get("product_partner_cell_gini"))}</strong>.</li>
+            <li>Median export Product Gini rises from <strong>{dec(exp_1988.get("product_gini"))}</strong> in 1988 to <strong>{dec(exp_2025.get("product_gini"))}</strong> in 2025; import Product Gini rises from <strong>{dec(imp_1988.get("product_gini"))}</strong> to <strong>{dec(imp_2025.get("product_gini"))}</strong>.</li>
           </ul>
         """,
         "map_note": evidence_note(
@@ -1051,7 +1050,7 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
           </div>
         """,
         "lumpy_text": (
-            f"The full exclusion lowers the median export product Gini from {dec(baseline.get('product_gini'))} "
+            f"The full exclusion lowers the median export Product Gini across HS6 products from {dec(baseline.get('product_gini'))} "
             f"to {dec(full_excl.get('product_gini'))}, while the median removed trade share is "
             f"{pct(full_excl.get('trade_share_removed'))}. This is currently an export-side test."
         ),
@@ -1059,7 +1058,7 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             ex6["median_by_variant"],
             [
                 ("label", "Specification", "text"),
-                ("product_gini", "Median product Gini", "dec"),
+                ("product_gini", "Median Product Gini (HS6 products)", "dec"),
                 ("product_top_1pct_share", "Top 1% share", "pct"),
                 ("product_top_5pct_share", "Top 5% share", "pct"),
                 ("trade_share_removed", "Trade share removed", "pct"),
@@ -1088,7 +1087,7 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
         ),
         "imports_takeaways": f"""
           <ul class="callout-list">
-            <li>Energy has the sharpest within-bin concentration: median bin Gini <strong>{dec(energy.get("product_gini"))}</strong>, median top-1 share <strong>{pct(energy.get("top_1_product_share"))}</strong>.</li>
+            <li>Energy has the sharpest within-bin Product Gini across HS6 energy products: median <strong>{dec(energy.get("product_gini"))}</strong>, median top-1 share <strong>{pct(energy.get("top_1_product_share"))}</strong>.</li>
             <li>Intermediates are the largest import bucket: median import value share <strong>{pct(intermediates.get("import_value_share"))}</strong>.</li>
             <li>Across importer-years, the median product top-supplier share is <strong>{pct(ex4["summary"].get("median_top_supplier_share"))}</strong>.</li>
             <li>Products with top supplier share at least 75% are <strong>{pct(ex4["summary"].get("share_products_top_supplier_ge_75"))}</strong> of product rows but <strong>{pct(ex4["summary"].get("import_value_share_products_top_supplier_ge_75"))}</strong> of import value.</li>
@@ -1098,7 +1097,7 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             ex3["bin_summary"],
             [
                 ("label", "Import bin", "text"),
-                ("product_gini", "Median bin Gini", "dec"),
+                ("product_gini", "Median Product Gini within bin", "dec"),
                 ("top_1_product_share", "Median top-1 share", "pct"),
                 ("import_value_share", "Median value share", "pct"),
                 ("product_gini_reduction_when_excluded", "Leave-one-out Gini effect", "dec"),
@@ -1112,11 +1111,11 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             f"of import value."
         ),
         "io_text": (
-            f"Bottom line: Exercise 11 weakens the broad intermediate-processing claim. The import products that raise total product-Gini concentration are generally less export-linked, including among intermediates. The stronger evidence is supplier-country concentration, not product-Gini concentration; this leaves room for a narrower China/electronics/machinery-style supplier-exposure story."
+            f"Bottom line: Exercise 11 weakens the broad intermediate-processing claim. The import products that raise total Product-Gini concentration across HS6 products are generally less export-linked, including among intermediates. The stronger evidence is supplier-country concentration, not Product-Gini concentration; this leaves room for a narrower China/electronics/machinery-style supplier-exposure story."
         ),
         "ex11_result_ladder": f"""
           <div class="result-ladder">
-            <article><span>Product-Gini linkage</span><strong>Negative</strong><p>HS6 product-Gini contribution to export value: {dec(ex11_main.get("coef"))}; export probability: {dec(ex11_any.get("coef"))}.</p></article>
+            <article><span>Product-Gini linkage</span><strong>Negative</strong><p>HS6 Product-Gini contribution to export value: {dec(ex11_main.get("coef"))}; export probability: {dec(ex11_any.get("coef"))}.</p></article>
             <article><span>Intermediate channel</span><strong>Negative</strong><p>Intermediate minus non-intermediate slope: {dec(ex11_interaction.get("coef"))}; concentration-driving intermediates are not more export-linked.</p></article>
             <article><span>Supplier-country exposure</span><strong>Positive</strong><p>Partner-HHI contribution to export value: {dec(ex11_supplier.get("coef"))}.</p></article>
             <article><span>HS2 robustness</span><strong>Does not rescue</strong><p>HS2 export value remains negative ({dec(ex11_hs2_value.get("coef"))}); probability/share and intermediate intensity are small or not significant.</p></article>
@@ -1127,7 +1126,7 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
           <div class="interpretation-grid">
             <article class="note">
               <h3>1. HS6 product-level result</h3>
-              <p>Within the same country-year, after controlling for product import share and BEC bin, products with higher contribution to total import product Gini tend to have lower export value. The export-value coefficient is <strong>{dec(ex11_main.get("coef"))}</strong>; the export-probability coefficient is <strong>{dec(ex11_any.get("coef"))}</strong>.</p>
+              <p>Within the same country-year, after controlling for product import share and BEC bin, HS6 products with higher contribution to total import Product Gini tend to have lower export value. The export-value coefficient is <strong>{dec(ex11_main.get("coef"))}</strong>; the export-probability coefficient is <strong>{dec(ex11_any.get("coef"))}</strong>.</p>
             </article>
             <article class="note">
               <h3>2. Intermediate-channel test</h3>
@@ -1135,7 +1134,7 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             </article>
             <article class="note">
               <h3>3. Supplier-country concentration</h3>
-              <p>This is the more supportive channel. Products that make import sourcing more concentrated by partner country are more export-linked; the partner-HHI coefficient is <strong>{dec(ex11_supplier.get("coef"))}</strong>.</p>
+              <p>This is the more supportive channel. Products that make import sourcing more concentrated by partner country are more export-linked; the Partner-HHI coefficient is <strong>{dec(ex11_supplier.get("coef"))}</strong>.</p>
             </article>
             <article class="note">
               <h3>4. HS2 robustness</h3>
@@ -1143,7 +1142,7 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             </article>
             <article class="note">
               <h3>5. Oil/gas/gold/coal exclusion</h3>
-              <p>Excluding HS4 codes 2701, 2709, 2710, 2711, and 7108 does not overturn the result. These rows are only {pct(commodity_stats.get("commodity_outlier_row_share"))} of product rows but {pct(commodity_stats.get("commodity_outlier_import_value_share"))} of import value; after excluding them, the product-Gini and intermediate coefficients remain negative and partner-HHI remains positive.</p>
+              <p>Excluding HS4 codes 2701, 2709, 2710, 2711, and 7108 does not overturn the result. These rows are only {pct(commodity_stats.get("commodity_outlier_row_share"))} of product rows but {pct(commodity_stats.get("commodity_outlier_import_value_share"))} of import value; after excluding them, the Product-Gini and intermediate coefficients remain negative and Partner-HHI remains positive.</p>
             </article>
           </div>
         """,
@@ -1256,24 +1255,13 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       <article>
         <h2>Purpose of This Brief</h2>
         <ul class="callout-list">
-          <li><strong>Extension:</strong> the high product, partner, and product-partner concentration facts remain visible in the 33-country panel from 1988 to 2025.</li>
+          <li><strong>Extension:</strong> the Product-Gini, Partner-Gini, and Product-partner-cell-Gini concentration facts remain visible in the 33-country panel from 1988 to 2025.</li>
           <li><strong>Robustness:</strong> removing oil, precious metals/gold, aircraft, ships, and arms lowers export concentration only modestly.</li>
           <li><strong>Mechanisms:</strong> import concentration has energy, supplier-dominance, and input-output pieces, but the broad intermediate-processing story is weakened by the product-level Exercise 11 regressions.</li>
         </ul>
       </article>
     </section>
 
-    <section class="section two-col">
-      <article>
-        <h2>What This Version Covers</h2>
-        <p>The site focuses on four pieces: the 1988-2025 extension of the 33-country concentration facts, lumpy-product exclusions, benchmark/null-model context, and import concentration mechanisms.</p>
-        <p>All numeric claims are recomputed from the result tables used to generate this site, with selected CSVs available on the Methods page.</p>
-      </article>
-      <article class="note">
-        <h3>How to read it</h3>
-        <p>High Ginis here mean trade is concentrated across products, partners, or product-partner cells within a country-year-flow. The results are descriptive; they are useful for scoping hypotheses before formal causal claims.</p>
-      </article>
-    </section>
 
 
     <section class="section link-grid">
@@ -1295,7 +1283,7 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
 
     <section class="section" id="extension-summary">
       <div class="section-heading">
-        <h2>What to Notice</h2>
+        <h2>Interesting things</h2>
         {context["extension_takeaways"]}
       </div>
     </section>
@@ -1308,7 +1296,7 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
         </div>
         <div class="controls compact">
           <label>Flow <select id="map-flow"><option>Exports</option><option>Imports</option></select></label>
-          <label>Metric <select id="map-metric"><option value="product_gini">Product Gini</option><option value="partner_gini">Partner Gini</option><option value="product_partner_cell_gini">Product-partner cell Gini</option></select></label>
+          <label>Metric <select id="map-metric"><option value="product_gini">Product Gini (HS6 products)</option><option value="partner_gini">Partner Gini (trade partners)</option><option value="product_partner_cell_gini">Product-partner cell Gini (HS6-by-partner)</option></select></label>
           <div class="year-control">
             <div class="year-control-head"><span>Year</span><output id="map-year-label" for="map-year-slider"></output></div>
             <input id="map-year-slider" type="range" min="1988" max="2025" step="1">
@@ -1332,7 +1320,7 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
         <div>
           <div class="controls compact">
             <label>Line flow <select id="line-flow"><option>Exports</option><option>Imports</option></select></label>
-            <label>Line metric <select id="line-metric"><option value="product_gini">Product Gini</option><option value="partner_gini">Partner Gini</option><option value="product_partner_cell_gini">Product-partner cell Gini</option></select></label>
+            <label>Line metric <select id="line-metric"><option value="product_gini">Product Gini (HS6 products)</option><option value="partner_gini">Partner Gini (trade partners)</option><option value="product_partner_cell_gini">Product-partner cell Gini (HS6-by-partner)</option></select></label>
           </div>
           {context["line_note"]}
           <div id="country-lines" class="chart tall"></div>
@@ -1378,7 +1366,7 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       <div id="exclusion-chart" class="chart"></div>
       {context["exclusion_table"]}
       <div class="figure-row">
-        <figure><a class="figure-link" href="assets/figures/ex6_before_after.png"><img src="assets/figures/ex6_before_after.png" alt="Before and after export product Gini over time"></a><figcaption>Export product Gini before and after full lumpy-product exclusion.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/ex6_before_after.png"><img src="assets/figures/ex6_before_after.png" alt="Before and after export Product Gini over time"></a><figcaption>Export Product Gini across HS6 products before and after full lumpy-product exclusion.</figcaption></figure>
         <figure><a class="figure-link" href="assets/figures/ex6_removed.png"><img src="assets/figures/ex6_removed.png" alt="Trade share removed over time"></a><figcaption>Trade share removed by exclusion specification.</figcaption></figure>
       </div>
     </section>
@@ -1392,7 +1380,7 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       <div id="benchmark-chart" class="chart"></div>
       {context["benchmark_table"]}
       <div class="figure-row">
-        <figure><a class="figure-link" href="assets/figures/ex10_actual_vs_benchmark.png"><img src="assets/figures/ex10_actual_vs_benchmark.png" alt="Actual versus HS2-preserved benchmark Gini"></a><figcaption>Actual product Ginis remain above the HS2-preserved random benchmark.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/ex10_actual_vs_benchmark.png"><img src="assets/figures/ex10_actual_vs_benchmark.png" alt="Actual versus HS2-preserved benchmark Product Gini"></a><figcaption>Actual Product Ginis across HS6 products remain above the HS2-preserved random benchmark.</figcaption></figure>
         <figure><a class="figure-link" href="assets/figures/ex10_percentile.png"><img src="assets/figures/ex10_percentile.png" alt="Share above the 95th benchmark percentile"></a><figcaption>Country-year observations above the 95th simulation percentile.</figcaption></figure>
       </div>
     </section>
@@ -1420,7 +1408,7 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
 
     <section class="section" id="imports-summary">
       <div class="section-heading">
-        <h2>What to Notice</h2>
+        <h2>Interesting things</h2>
         {context["imports_takeaways"]}
       </div>
     </section>
@@ -1428,13 +1416,13 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
     <section class="section" id="import-bins">
       <div class="section-heading">
         <h2>Exercise 3: Import Bins</h2>
-        <p>Energy has the strongest within-bin concentration and a positive leave-one-bin-out contribution. Intermediates matter more by scale: they are a large part of the import bill and include specialized input categories where a few HS6 lines can carry meaningful value.</p>
+        <p>Energy has the strongest within-bin Product Gini across HS6 products and a positive leave-one-bin-out contribution. Intermediates matter more by scale: they are a large part of the import bill and include specialized input categories where a few HS6 lines can carry meaningful value.</p>
       </div>
       <div id="import-bin-chart" class="chart"></div>
       {context["bin_table"]}
       <div class="figure-row">
         <figure><a class="figure-link" href="assets/figures/ex3_value_share.png"><img src="assets/figures/ex3_value_share.png" alt="Median import value share by bin"></a><figcaption>Median import value share by BEC-style bin.</figcaption></figure>
-        <figure><a class="figure-link" href="assets/figures/ex3_leave_one_out.png"><img src="assets/figures/ex3_leave_one_out.png" alt="Gini reduction when each bin is excluded"></a><figcaption>Leave-one-bin-out effect on latest-year import product Gini.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/ex3_leave_one_out.png"><img src="assets/figures/ex3_leave_one_out.png" alt="Gini reduction when each bin is excluded"></a><figcaption>Leave-one-bin-out effect on latest-year import Product Gini across HS6 products.</figcaption></figure>
       </div>
     </section>
 
@@ -1457,13 +1445,13 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       </div>
       {context["ex11_result_ladder"]}
       <div id="io-chart" class="chart"></div>
-      <p class="note">The IO chart remains useful descriptive context: top export sectors often have concentrated imported-input baskets. But the product-level linkage test below shows that the specific import products driving aggregate product-Gini concentration are generally not the export-linked products.</p>
+      <p class="note">The IO chart remains useful descriptive context: top export sectors often have concentrated imported-input baskets. But the HS6 product-level linkage test below shows that the specific import products driving aggregate Product-Gini concentration are generally not the export-linked products.</p>
     </section>
 
     <section class="section" id="ex11-regressions">
       <div class="section-heading">
         <h2>Exercise 11 Regression Audit Trail</h2>
-        <p>The table and figures separate product-Gini concentration from supplier-country concentration. This weakens the broad intermediate-processing claim and points to a narrower supplier-exposure channel.</p>
+        <p>The table and figures separate Product-Gini concentration from supplier-country concentration. This weakens the broad intermediate-processing claim and points to a narrower supplier-exposure channel.</p>
       </div>
       {context["ex11_detail_blocks"]}
       {context["coefs_table"]}
@@ -1472,7 +1460,7 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       <h3 class="subsection-title">Commodity-exclusion robustness</h3>
       {context["commodity_table"]}
       <div class="figure-row">
-        <figure><a class="figure-link" href="assets/figures/ex11_export_linkage_decile.png"><img src="assets/figures/ex11_export_linkage_decile.png" alt="Export linkage by product-Gini leave-one-out decile"></a><figcaption>HS6 export linkage by product-Gini contribution decile.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/ex11_export_linkage_decile.png"><img src="assets/figures/ex11_export_linkage_decile.png" alt="Export linkage by Product-Gini leave-one-out decile"></a><figcaption>HS6 export linkage by Product-Gini contribution decile.</figcaption></figure>
         <figure><a class="figure-link" href="assets/figures/ex11_hs2_linkage_decile.png"><img src="assets/figures/ex11_hs2_linkage_decile.png" alt="HS2 export linkage by leave-one-out decile"></a><figcaption>HS2 robustness: export linkage by aggregated concentration-contribution decile.</figcaption></figure>
       </div>
       <div class="figure-row">
@@ -1503,9 +1491,9 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       <article>
         <h2>Definitions</h2>
         <ul class="callout-list">
-          <li><strong>Product Gini:</strong> concentration over HS6 product totals in a country-year-flow.</li>
-          <li><strong>Partner Gini:</strong> concentration over trade partner totals in a country-year-flow.</li>
-          <li><strong>Product-partner-cell Gini:</strong> concentration over HS6-by-partner cells.</li>
+          <li><strong>Product Gini:</strong> concentration across HS6 product totals within a country-year-flow.</li>
+          <li><strong>Partner Gini:</strong> concentration across destination or source partner totals within a country-year-flow.</li>
+          <li><strong>Product-partner cell Gini:</strong> concentration across HS6 product-by-partner cells within a country-year-flow; this is the product-partner/partner-product measure.</li>
           <li><strong>Lumpy-product exclusions:</strong> HS27 oil/mineral fuels, HS71 precious stones/metals, HS88 aircraft, HS89 ships, and HS93 arms.</li>
           <li><strong>HS2-preserving benchmark:</strong> randomizes within broad HS2 sectors while preserving HS2 totals and active HS6 counts; it is a conditional benchmark, not complete randomization.</li>
         </ul>
@@ -2102,7 +2090,7 @@ def site_js() -> str:
     if (!box || !row) return;
     box.innerHTML = '<strong>' + row.country + '</strong> (' + row.iso3 + '), ' + row.year + ' ' + row.flow +
       '<br>' + (DATA.labels?.metrics?.[metric] || metric) + ': ' + fmt(row[metric]) +
-      '<br>Product Gini: ' + fmt(row.product_gini) +
+      '<br>Product Gini (HS6 products): ' + fmt(row.product_gini) +
       ' | Partner Gini: ' + fmt(row.partner_gini) +
       ' | Cell Gini: ' + fmt(row.product_partner_cell_gini);
   }
@@ -2272,9 +2260,9 @@ def site_js() -> str:
       x: rows.map((r) => r.label),
       y: rows.map((r) => r.product_gini),
       marker: { color: '#0f766e' },
-      hovertemplate: '%{x}<br>Median product Gini: %{y:.3f}<extra></extra>'
+      hovertemplate: '%{x}<br>Median Product Gini (HS6 products): %{y:.3f}<extra></extra>'
     };
-    Plotly.react(node, [trace], layout('Median export product Gini after lumpy-product exclusions', 'Gini'), config);
+    Plotly.react(node, [trace], layout('Median export Product Gini after lumpy-product exclusions', 'Product Gini'), config);
   }
 
   function renderBenchmarkChart() {
@@ -2292,7 +2280,7 @@ def site_js() -> str:
         hovertemplate: flow + '<br>%{x}<br>Actual minus benchmark: %{y:.3f}<extra></extra>'
       };
     });
-    const chartLayout = layout('How far actual product Ginis sit above random benchmarks', 'Actual minus benchmark Gini');
+    const chartLayout = layout('How far actual Product Ginis sit above random benchmarks', 'Actual minus benchmark Product Gini');
     chartLayout.barmode = 'group';
     Plotly.react(node, traces, chartLayout, config);
   }
@@ -2308,7 +2296,7 @@ def site_js() -> str:
     if (!node) return;
     const rows = DATA.exercise3?.bin_summary || [];
     const traces = [
-      { name: 'Product Gini', y: rows.map((r) => r.product_gini), marker: { color: '#0f766e' } },
+      { name: 'Product Gini (within bin)', y: rows.map((r) => r.product_gini), marker: { color: '#0f766e' } },
       { name: 'Top-1 product share', y: rows.map((r) => r.top_1_product_share), marker: { color: '#b7791f' } },
       { name: 'Import value share', y: rows.map((r) => r.import_value_share), marker: { color: '#2563eb' } }
     ].map((trace) => ({
@@ -2349,7 +2337,7 @@ def site_js() -> str:
     if (!node) return;
     const rows = DATA.exercise11?.year_series || [];
     const traces = [
-      ['weighted_top_sector_input_product_gini', 'Top-sector input product Gini', '#0f766e'],
+      ['weighted_top_sector_input_product_gini', 'Top-sector input Product Gini', '#0f766e'],
       ['weighted_top_sector_top_supplier_share', 'Top-sector top-supplier share', '#b7791f'],
       ['median_top_sector_matched_requirement_share', 'Matched requirement share', '#2563eb']
     ].map(([key, name, color]) => ({
