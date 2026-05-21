@@ -566,6 +566,11 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
         .median(numeric_only=True)
         .reset_index()
     )
+    latest_supplier_year = int(suppliers["year"].max()) if not suppliers.empty else None
+    latest_supplier_reporter_count = (
+        int(suppliers.loc[suppliers["year"].eq(latest_supplier_year), "iso3"].nunique()) if latest_supplier_year else None
+    )
+    india_latest_year = int(suppliers.loc[suppliers["iso3"].eq("IND"), "year"].max()) if not suppliers[suppliers["iso3"].eq("IND")].empty else None
 
     io_valid = io.dropna(subset=["weighted_top_sector_input_product_gini"]).copy()
     io_medians = io_valid[
@@ -704,6 +709,9 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
                 ]
             },
             "year_series": clean_records(supplier_years, list(supplier_years.columns)),
+            "latest_year": latest_supplier_year,
+            "latest_reporter_count": latest_supplier_reporter_count,
+            "india_latest_year": india_latest_year,
         },
         "exercise6": {
             "median_by_variant": clean_records(exclusion_medians, list(exclusion_medians.columns)),
@@ -773,6 +781,9 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
     energy = find_value(ex3["bin_summary"], import_bin="energy")
     intermediates = find_value(ex3["bin_summary"], import_bin="intermediates")
     india_supplier = ex4["india_2024"]
+    latest_supplier_year = int(ex4.get("latest_year")) if ex4.get("latest_year") else 2025
+    latest_supplier_reporter_count = int(ex4.get("latest_reporter_count")) if ex4.get("latest_reporter_count") else 0
+    india_supplier_year = int(ex4.get("india_latest_year")) if ex4.get("india_latest_year") else int(india_supplier.get("year", 2024))
     india_io = ex11["india_latest"]
     loo = ex1["top5_leave_one_out_highlights"]
     all_import_supplier = loo["all_reporters"]["import_suppliers"][0]
@@ -1105,11 +1116,18 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             ],
         ),
         "supplier_text": (
-            f"For India in 2024, top-supplier share is at least 75% in "
+            f"For India in {india_supplier_year}, top-supplier share is at least 75% in "
             f"{pct(india_supplier.get('share_products_top_supplier_ge_75'))} of imported HS6 rows, "
             f"accounting for {pct(india_supplier.get('import_value_share_products_top_supplier_ge_75'))} "
             f"of import value."
         ),
+        "supplier_scope_note": (
+            f"The histogram is not India-only: it pools importer-HS6 product observations for all "
+            f"{latest_supplier_reporter_count} reporter countries with {latest_supplier_year} data. "
+            f"The India statistic above is separate because India's latest Exercise 4 year is {india_supplier_year}. "
+            f"Top-supplier share means the share of an importer-product's import value sourced from its largest supplier country."
+        ),
+        "supplier_scope_year": str(latest_supplier_year),
         "io_text": (
             f"Bottom line: Exercise 11 weakens the broad intermediate-processing claim. The import products that raise total Product-Gini concentration across HS6 products are generally less export-linked, including among intermediates. The stronger evidence is supplier-country concentration, not Product-Gini concentration; this leaves room for a narrower China/electronics/machinery-style supplier-exposure story."
         ),
@@ -1433,10 +1451,13 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
         <h2>Exercise 4: Dominant Suppliers</h2>
         <p>{context["supplier_text"]}</p>
       </div>
+      <div class="note">
+        <p>{context["supplier_scope_note"]}</p>
+      </div>
       <div id="supplier-chart" class="chart"></div>
       <div class="figure-row">
         <figure><a class="figure-link" href="assets/figures/ex4_supplier_time.png"><img src="assets/figures/ex4_supplier_time.png" alt="Dominant supplier summary over time"></a><figcaption>Dominant supplier metrics over time.</figcaption></figure>
-        <figure><a class="figure-link" href="assets/figures/ex4_supplier_distribution.png"><img src="assets/figures/ex4_supplier_distribution.png" alt="Latest-year distribution of top supplier shares"></a><figcaption>Latest-year top-supplier-share distribution.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/ex4_supplier_distribution.png"><img src="assets/figures/ex4_supplier_distribution.png" alt="Latest-year distribution of top supplier shares"></a><figcaption>Top-supplier-share distribution across all available {context["supplier_scope_year"]} importer-HS6 product rows.</figcaption></figure>
       </div>
     </section>
 
