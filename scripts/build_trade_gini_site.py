@@ -33,10 +33,8 @@ SOURCE_FILES = {
     "exercise_3_decomposition": ROOT / "results/exercise_03_tables/import_bin_decomposition.csv",
     "exercise_3_total": ROOT / "results/exercise_03_tables/import_total_concentration.csv",
     "exercise_4_suppliers": ROOT / "results/exercise_04_tables/dominant_supplier_importer_summary.csv",
-    "exercise_4_supplier_decomp_country_year": ROOT / "results/exercise_04_tables/supplier_hhi_decomposition_country_year.csv",
-    "exercise_4_supplier_decomp_latest": ROOT / "results/exercise_04_tables/supplier_hhi_decomposition_latest.csv",
-    "exercise_4_supplier_decomp_india": ROOT / "results/exercise_04_tables/india_supplier_hhi_decomposition_timeseries.csv",
-    "exercise_4_supplier_decomp_india_top": ROOT / "results/exercise_04_tables/india_supplier_hhi_top_contributing_products.csv",
+    "exercise_4_partner_counterfactual_country_year": ROOT / "results/exercise_04_tables/partner_gini_counterfactual_country_year.csv",
+    "exercise_4_partner_counterfactual_latest": ROOT / "results/exercise_04_tables/partner_gini_counterfactual_latest.csv",
     "exercise_6_exclusions": ROOT / "results/exercise_06_tables/concentration_exclusions_all_years.csv",
     "exercise_10_hs2": ROOT / "results/exercise_10_tables/random_benchmark_hs2_product_all_years.csv",
     "exercise_10_active": ROOT / "results/exercise_10_tables/random_benchmark_active_count_null_all_years.csv",
@@ -54,11 +52,8 @@ FIGURES = {
     "ex3_leave_one_out": ROOT / "results/exercise_03_figures/latest_year_gini_reduction_when_bin_excluded.png",
     "ex4_supplier_time": ROOT / "results/exercise_04_figures/dominant_supplier_summary_over_time.png",
     "ex4_supplier_distribution": ROOT / "results/exercise_04_figures/latest_year_top_supplier_share_distribution.png",
-    "ex4_supplier_hhi_scatter": ROOT / "results/exercise_04_figures/supplier_hhi_vs_product_gini_latest.png",
-    "ex4_supplier_hhi_decomposition": ROOT / "results/exercise_04_figures/supplier_hhi_decomposition_latest.png",
-    "ex4_india_supplier_hhi_time": ROOT / "results/exercise_04_figures/india_supplier_hhi_decomposition_timeseries.png",
-    "ex4_india_supplier_hhi_bubble": ROOT / "results/exercise_04_figures/india_supplier_hhi_bubble_latest.png",
-    "ex4_india_supplier_hhi_top": ROOT / "results/exercise_04_figures/india_supplier_hhi_top_products_latest.png",
+    "ex4_partner_counterfactual_latest": ROOT / "results/exercise_04_figures/partner_gini_counterfactual_latest.png",
+    "ex4_india_partner_counterfactual": ROOT / "results/exercise_04_figures/india_partner_gini_counterfactual_timeseries.png",
     "ex6_before_after": ROOT / "results/exercise_06_figures/before_after_product_gini_over_time.png",
     "ex6_removed": ROOT / "results/exercise_06_figures/trade_share_removed_over_time.png",
     "ex10_actual_vs_benchmark": ROOT / "results/exercise_10_figures/actual_vs_simulated_gini_product_hs2_preserved.png",
@@ -74,10 +69,8 @@ DOWNLOADS = {
     "exercise_01_concentration_all_years.csv": SOURCE_FILES["exercise_1_panel"],
     "exercise_03_import_bin_concentration.csv": SOURCE_FILES["exercise_3_bins"],
     "exercise_04_dominant_supplier_importer_summary.csv": SOURCE_FILES["exercise_4_suppliers"],
-    "exercise_04_supplier_hhi_decomposition_country_year.csv": SOURCE_FILES["exercise_4_supplier_decomp_country_year"],
-    "exercise_04_supplier_hhi_decomposition_latest.csv": SOURCE_FILES["exercise_4_supplier_decomp_latest"],
-    "exercise_04_india_supplier_hhi_decomposition_timeseries.csv": SOURCE_FILES["exercise_4_supplier_decomp_india"],
-    "exercise_04_india_supplier_hhi_top_contributing_products.csv": SOURCE_FILES["exercise_4_supplier_decomp_india_top"],
+    "exercise_04_partner_gini_counterfactual_country_year.csv": SOURCE_FILES["exercise_4_partner_counterfactual_country_year"],
+    "exercise_04_partner_gini_counterfactual_latest.csv": SOURCE_FILES["exercise_4_partner_counterfactual_latest"],
     "exercise_06_concentration_exclusions_all_years.csv": SOURCE_FILES["exercise_6_exclusions"],
     "exercise_10_hs2_product_benchmark_all_years.csv": SOURCE_FILES["exercise_10_hs2"],
     "exercise_11_country_year_input_output_linkage_summary.csv": SOURCE_FILES["exercise_11_io_summary"],
@@ -548,10 +541,8 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
     decomp = read_csv("exercise_3_decomposition")
     total_import = read_csv("exercise_3_total")
     suppliers = read_csv("exercise_4_suppliers")
-    supplier_decomp = read_csv("exercise_4_supplier_decomp_country_year")
-    supplier_decomp_latest = read_csv("exercise_4_supplier_decomp_latest")
-    supplier_decomp_india = read_csv("exercise_4_supplier_decomp_india")
-    supplier_decomp_india_top = read_csv("exercise_4_supplier_decomp_india_top")
+    partner_counterfactual = read_csv("exercise_4_partner_counterfactual_country_year")
+    partner_counterfactual_latest = read_csv("exercise_4_partner_counterfactual_latest")
     exclusions = read_csv("exercise_6_exclusions")
     hs2 = read_csv("exercise_10_hs2")
     active = read_csv("exercise_10_active")
@@ -739,30 +730,30 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
         int(suppliers.loc[suppliers["year"].eq(latest_supplier_year), "iso3"].nunique()) if latest_supplier_year else None
     )
     india_latest_year = int(suppliers.loc[suppliers["iso3"].eq("IND"), "year"].max()) if not suppliers[suppliers["iso3"].eq("IND")].empty else None
-    for frame in [supplier_decomp, supplier_decomp_latest, supplier_decomp_india, supplier_decomp_india_top]:
+    for frame in [partner_counterfactual, partner_counterfactual_latest]:
         for column in frame.columns:
-            if column not in {"country", "iso3", "cmd_code", "top_supplier_iso3", "top_supplier_name"}:
+            if column not in {"country", "iso3", "source_file", "exercise4_country", "exercise4_iso3"}:
                 frame[column] = pd.to_numeric(frame[column], errors="coerce")
-    supplier_decomp_latest = supplier_decomp_latest.sort_values(
-        ["weighted_supplier_hhi", "country"], ascending=[False, True]
+    partner_counterfactual_latest = partner_counterfactual_latest.sort_values(
+        ["partner_gini_reduction", "country"], ascending=[False, True]
     ).reset_index(drop=True)
-    supplier_decomp_india = supplier_decomp_india.sort_values("year").reset_index(drop=True)
-    if "cmd_code" in supplier_decomp_india_top.columns:
-        supplier_decomp_india_top["cmd_code"] = supplier_decomp_india_top["cmd_code"].astype(str).str.zfill(6)
-    supplier_decomp_india_top = supplier_decomp_india_top.sort_values(
-        "hhi_contribution", ascending=False
+    india_partner_counterfactual = partner_counterfactual[partner_counterfactual["iso3"].eq("IND")].sort_values(
+        "year"
     ).reset_index(drop=True)
-    supplier_decomp_summary = supplier_decomp_latest[
+    partner_counterfactual_summary = partner_counterfactual_latest[
         [
-            "weighted_supplier_hhi",
-            "equal_weight_supplier_hhi",
-            "top_supplier_component_share",
-            "product_weight_amplification",
-            "product_weight_amplification_pct",
+            "actual_partner_gini",
+            "counterfactual_partner_gini",
+            "partner_gini_reduction",
+            "explained_share",
+            "counterfactual_residual_share",
+            "full_diffusion_reduction",
+            "full_diffusion_explained_share",
+            "partner_gini_validation_abs_diff",
         ]
     ].median(numeric_only=True)
-    supplier_decomp_india_latest = (
-        supplier_decomp_india.iloc[-1] if not supplier_decomp_india.empty else pd.Series(dtype=object)
+    partner_counterfactual_india_latest = (
+        india_partner_counterfactual.iloc[-1] if not india_partner_counterfactual.empty else pd.Series(dtype=object)
     )
 
     io_valid = io.dropna(subset=["weighted_top_sector_input_product_gini"]).copy()
@@ -896,60 +887,51 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
             "latest_year": latest_supplier_year,
             "latest_reporter_count": latest_supplier_reporter_count,
             "india_latest_year": india_latest_year,
-            "supplier_hhi_decomposition": {
-                "summary": {key: clean_scalar(value) for key, value in supplier_decomp_summary.items()},
+            "partner_gini_counterfactual": {
+                "summary": {key: clean_scalar(value) for key, value in partner_counterfactual_summary.items()},
                 "latest": clean_records(
-                    supplier_decomp_latest,
+                    partner_counterfactual_latest,
                     [
                         "country",
                         "iso3",
                         "year",
-                        "product_gini",
-                        "weighted_supplier_hhi",
-                        "equal_weight_supplier_hhi",
-                        "product_weight_amplification",
-                        "product_weight_amplification_pct",
-                        "top_supplier_component_share",
-                        "import_value_share_products_top_supplier_ge_75",
+                        "actual_partner_gini",
+                        "counterfactual_partner_gini",
+                        "partner_gini_reduction",
+                        "explained_share",
+                        "counterfactual_residual_share",
+                        "full_diffusion_reduction",
+                        "full_diffusion_explained_share",
+                        "active_products",
+                        "active_partners",
+                        "partner_gini_validation_abs_diff",
                     ],
                 ),
                 "india_latest": {
-                    key: clean_scalar(supplier_decomp_india_latest.get(key))
+                    key: clean_scalar(partner_counterfactual_india_latest.get(key))
                     for key in [
                         "year",
-                        "weighted_supplier_hhi",
-                        "equal_weight_supplier_hhi",
-                        "product_weight_amplification",
-                        "product_weight_amplification_pct",
-                        "top_supplier_component_share",
-                        "weighted_top_supplier_share",
-                        "import_value_share_products_top_supplier_ge_75",
+                        "actual_partner_gini",
+                        "counterfactual_partner_gini",
+                        "partner_gini_reduction",
+                        "explained_share",
+                        "counterfactual_residual_share",
+                        "full_diffusion_reduction",
+                        "full_diffusion_explained_share",
+                        "active_products",
+                        "active_partners",
+                        "partner_gini_validation_abs_diff",
                     ]
                 },
                 "india_year_series": clean_records(
-                    supplier_decomp_india,
+                    india_partner_counterfactual,
                     [
                         "year",
-                        "weighted_supplier_hhi",
-                        "equal_weight_supplier_hhi",
-                        "product_weight_amplification",
-                        "product_weight_amplification_pct",
-                        "top_supplier_component_share",
-                    ],
-                ),
-                "india_top_products": clean_records(
-                    supplier_decomp_india_top.head(15),
-                    [
-                        "cmd_code",
-                        "total_product_imports",
-                        "product_import_share",
-                        "source_hhi",
-                        "top_supplier_iso3",
-                        "top_supplier_name",
-                        "top_supplier_share",
-                        "supplier_count",
-                        "hhi_contribution",
-                        "hhi_contribution_share",
+                        "actual_partner_gini",
+                        "counterfactual_partner_gini",
+                        "partner_gini_reduction",
+                        "explained_share",
+                        "full_diffusion_explained_share",
                     ],
                 ),
             },
@@ -1023,12 +1005,13 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
     energy = find_value(ex3["bin_summary"], import_bin="energy")
     intermediates = find_value(ex3["bin_summary"], import_bin="intermediates")
     india_supplier = ex4["india_2024"]
-    supplier_hhi = ex4.get("supplier_hhi_decomposition", {})
-    supplier_hhi_summary = supplier_hhi.get("summary", {})
-    supplier_hhi_india = supplier_hhi.get("india_latest", {})
+    partner_counterfactual = ex4.get("partner_gini_counterfactual", {})
+    partner_counterfactual_summary = partner_counterfactual.get("summary", {})
+    partner_counterfactual_india = partner_counterfactual.get("india_latest", {})
     latest_supplier_year = int(ex4.get("latest_year")) if ex4.get("latest_year") else 2025
     latest_supplier_reporter_count = int(ex4.get("latest_reporter_count")) if ex4.get("latest_reporter_count") else 0
     india_supplier_year = int(ex4.get("india_latest_year")) if ex4.get("india_latest_year") else int(india_supplier.get("year", 2024))
+    india_counterfactual_year = int(partner_counterfactual_india.get("year") or india_supplier_year)
     india_io = ex11["india_latest"]
     ex11_main = find_value(ex11["coefficients"], result="HS6 Product-Gini contribution")
     ex11_any = find_value(ex11["coefficients"], result="HS6 export probability")
@@ -1151,10 +1134,10 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
                 "Imports are concentrated because each product has one dominant global source.",
                 "For many products, country imports come mostly from the top source country.",
                 "Import concentration remains high even when supplier shares within products are diffuse.",
-                f"Supports product-level supplier dominance mechanically, with a value-weight caveat. The median product top-supplier share is {pct(ex4['summary'].get('median_top_supplier_share'))}; products above 75% top-supplier share are {pct(ex4['summary'].get('share_products_top_supplier_ge_75'))} of rows but only {pct(ex4['summary'].get('import_value_share_products_top_supplier_ge_75'))} of value. In the latest-country decomposition, median weighted supplier HHI is {dec(supplier_hhi_summary.get('weighted_supplier_hhi'))}, and the top-supplier component explains {pct(supplier_hhi_summary.get('top_supplier_component_share'))} of it. But median product-weight amplification is {dec(supplier_hhi_summary.get('product_weight_amplification'))}, so large products are not generally more supplier-concentrated than the typical product.",
+                f"Supports a meaningful but incomplete mechanism. The median product top-supplier share is {pct(ex4['summary'].get('median_top_supplier_share'))}; products above 75% top-supplier share are {pct(ex4['summary'].get('share_products_top_supplier_ge_75'))} of rows but only {pct(ex4['summary'].get('import_value_share_products_top_supplier_ge_75'))} of value. In the latest-country counterfactual, equalizing suppliers within observed HS6 products reduces median import Partner Gini by {dec(partner_counterfactual_summary.get('partner_gini_reduction'))}, or {pct(partner_counterfactual_summary.get('explained_share'))} of actual Partner Gini.",
                 [
                     ("Supplier dominance", "#supplier-dominance"),
-                    ("Supplier HHI decomposition", "#supplier-hhi-decomposition"),
+                    ("Partner-Gini counterfactual", "#partner-gini-counterfactual"),
                     ("Supplier CSV", "assets/downloads/exercise_04_dominant_supplier_importer_summary.csv"),
                 ],
             ),
@@ -1286,6 +1269,7 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             <li>Intermediates are the largest import bucket: median import value share <strong>{pct(intermediates.get("import_value_share"))}</strong>.</li>
             <li>Across importer-years, the median product top-supplier share is <strong>{pct(ex4["summary"].get("median_top_supplier_share"))}</strong>.</li>
             <li>Products with top supplier share at least 75% are <strong>{pct(ex4["summary"].get("share_products_top_supplier_ge_75"))}</strong> of product rows but <strong>{pct(ex4["summary"].get("import_value_share_products_top_supplier_ge_75"))}</strong> of import value.</li>
+            <li>In the latest-country counterfactual, neutralizing within-product supplier dominance reduces median import Partner Gini by <strong>{dec(partner_counterfactual_summary.get("partner_gini_reduction"))}</strong>, or <strong>{pct(partner_counterfactual_summary.get("explained_share"))}</strong> of the actual index.</li>
           </ul>
         """,
         "bin_table": table_rows(
@@ -1312,41 +1296,29 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             f"Top-supplier share means the share of an importer-product's import value sourced from its largest supplier country."
         ),
         "supplier_scope_year": str(latest_supplier_year),
-        "supplier_hhi_text": (
-            f"This decomposition asks whether Product-Gini concentration across HS6 imports and supplier dominance within each HS6 product combine into supplier-country exposure. Across latest available country-years, the median weighted supplier HHI is {dec(supplier_hhi_summary.get('weighted_supplier_hhi'))}; the top-supplier component accounts for {pct(supplier_hhi_summary.get('top_supplier_component_share'))} of that weighted HHI. The median product-weight amplification is {dec(supplier_hhi_summary.get('product_weight_amplification'))}, so the evidence does not say that high-value products are systematically more supplier-concentrated than ordinary products."
+        "partner_counterfactual_text": (
+            f"This is the country-centric version of the supplier question. For each importer-year, we first compute actual import Partner Gini after summing all HS6 products by source country. Then we rebuild the same importer-year after spreading each product equally across its observed suppliers. Across latest available country-years, median actual Partner Gini is {dec(partner_counterfactual_summary.get('actual_partner_gini'))}; the conservative counterfactual median is {dec(partner_counterfactual_summary.get('counterfactual_partner_gini'))}. The median reduction is {dec(partner_counterfactual_summary.get('partner_gini_reduction'))}, or {pct(partner_counterfactual_summary.get('explained_share'))} of actual Partner Gini."
         ),
-        "supplier_hhi_india_text": (
-            f"For India in {int(supplier_hhi_india.get('year', india_supplier_year))}, weighted supplier HHI is {dec(supplier_hhi_india.get('weighted_supplier_hhi'))}, compared with an equal-product-weight benchmark of {dec(supplier_hhi_india.get('equal_weight_supplier_hhi'))}. Product weighting lowers the HHI by {dec(supplier_hhi_india.get('product_weight_amplification'))}, while the top-supplier component still explains {pct(supplier_hhi_india.get('top_supplier_component_share'))} of the weighted supplier HHI. In plain English: India's large import products are not more supplier-concentrated than the typical HS6 product, but the supplier exposure that remains is mostly a one-dominant-supplier-per-product mechanism."
+        "partner_counterfactual_india_text": (
+            f"For India in {india_counterfactual_year}, actual import Partner Gini is {dec(partner_counterfactual_india.get('actual_partner_gini'))}. Equalizing suppliers within each observed HS6 product lowers it to {dec(partner_counterfactual_india.get('counterfactual_partner_gini'))}, a reduction of {dec(partner_counterfactual_india.get('partner_gini_reduction'))} or {pct(partner_counterfactual_india.get('explained_share'))} of the actual index."
         ),
-        "supplier_hhi_definitions": """
+        "partner_counterfactual_definitions": """
           <div class="note">
-            <p><strong>Product Gini</strong> is unevenness of imports across HS6 products. <strong>Within-product supplier HHI</strong> is concentration across source countries inside one HS6 product. <strong>Weighted supplier HHI</strong> is the import-value-weighted average of those within-product HHIs across all products. <strong>Aggregate partner concentration</strong> is concentration across total supplier countries after summing all products; it is related, but it is not the same object.</p>
+            <p><strong>Actual Partner Gini</strong> is computed across source countries after summing imports over all HS6 products: <code>Gini_j(sum_p imports_pj)</code>.</p>
+            <p><strong>Conservative counterfactual</strong> keeps each product's total imports and observed supplier set fixed, but gives every observed supplier the same product share: <code>imports_pj = product_total_p / observed_suppliers_p</code>. The remaining Gini is the residual partner concentration after within-product supplier dominance is neutralized.</p>
+            <p><strong>Explained share</strong> is <code>(actual Partner Gini - counterfactual Partner Gini) / actual Partner Gini</code>. Negative values are allowed. The <strong>full-diffusion upper bound</strong> spreads every product equally across all active partners in the country-year; it is a deliberately strong benchmark and collapses Partner Gini to zero by construction.</p>
           </div>
         """,
-        "supplier_hhi_latest_table": table_rows(
-            supplier_hhi.get("latest", []),
+        "partner_counterfactual_latest_table": table_rows(
+            partner_counterfactual.get("latest", []),
             [
                 ("country", "Country", "text"),
                 ("iso3", "ISO3", "text"),
                 ("year", "Year", "year"),
-                ("product_gini", "Import Product Gini", "dec"),
-                ("weighted_supplier_hhi", "Weighted supplier HHI", "dec"),
-                ("equal_weight_supplier_hhi", "Equal-weight HHI", "dec"),
-                ("product_weight_amplification", "Product-weight amplification", "dec"),
-                ("top_supplier_component_share", "Top-supplier component share", "pct"),
-                ("import_value_share_products_top_supplier_ge_75", "Value share in >=75% top-supplier products", "pct"),
-            ],
-        ),
-        "supplier_hhi_india_top_table": table_rows(
-            supplier_hhi.get("india_top_products", []),
-            [
-                ("cmd_code", "HS6", "text"),
-                ("total_product_imports", "Import value", "money"),
-                ("product_import_share", "Product import share", "pct"),
-                ("source_hhi", "Within-product supplier HHI", "dec"),
-                ("top_supplier_name", "Top supplier", "text"),
-                ("top_supplier_share", "Top-supplier share", "pct"),
-                ("hhi_contribution_share", "Share of India's weighted supplier HHI", "pct"),
+                ("actual_partner_gini", "Actual Partner Gini", "dec"),
+                ("counterfactual_partner_gini", "Counterfactual Partner Gini", "dec"),
+                ("partner_gini_reduction", "Gini reduction", "dec"),
+                ("explained_share", "Explained share", "pct"),
             ],
         ),
         "io_text": (
@@ -1668,31 +1640,20 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       </div>
     </section>
 
-    <section class="section" id="supplier-hhi-decomposition">
+    <section class="section" id="partner-gini-counterfactual">
       <div class="section-heading">
-        <h2>How Product Concentration and Supplier Dominance Combine</h2>
-        <p>{context["supplier_hhi_text"]}</p>
+        <h2>How Much Partner Gini Comes from Within-Product Supplier Dominance?</h2>
+        <p>{context["partner_counterfactual_text"]}</p>
       </div>
-      {context["supplier_hhi_definitions"]}
+      {context["partner_counterfactual_definitions"]}
       <div class="note">
-        <p><strong>Interpretation rule:</strong> if weighted supplier HHI is above the equal-product-weight benchmark, high-value products are more supplier-concentrated than the typical product. If the top-supplier component share is high, the weighted HHI mostly comes from one dominant source country within products.</p>
+        <p><strong>Interpretation rule:</strong> the teal part of the latest-country chart is the amount of aggregate Partner Gini removed by equalizing suppliers within each observed HS6 product. The gray part is the residual Partner Gini left after that equalization. The full-diffusion benchmark is shown only as an upper bound because it also equalizes products across partners that were not observed supplying that product.</p>
       </div>
-      <h3 class="subsection-title">All countries: latest available year</h3>
       <div class="figure-row">
-        <figure><a class="figure-link" href="assets/figures/ex4_supplier_hhi_scatter.png"><img src="assets/figures/ex4_supplier_hhi_scatter.png" alt="Latest-year import Product Gini versus weighted supplier HHI"></a><figcaption>Product Gini across HS6 imports compared with weighted within-product supplier HHI.</figcaption></figure>
-        <figure><a class="figure-link" href="assets/figures/ex4_supplier_hhi_decomposition.png"><img src="assets/figures/ex4_supplier_hhi_decomposition.png" alt="Weighted supplier HHI decomposition by country"></a><figcaption>Weighted supplier HHI split into top-supplier and residual supplier components.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/ex4_partner_counterfactual_latest.png"><img src="assets/figures/ex4_partner_counterfactual_latest.png" alt="Latest-year import Partner Gini counterfactual decomposition"></a><figcaption>Actual Partner Gini equals the conservative counterfactual residual plus the within-product dominance contribution.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/ex4_india_partner_counterfactual.png"><img src="assets/figures/ex4_india_partner_counterfactual.png" alt="India import Partner Gini counterfactual over time"></a><figcaption>{context["partner_counterfactual_india_text"]}</figcaption></figure>
       </div>
-      {context["supplier_hhi_latest_table"]}
-      <h3 class="subsection-title">India deep dive</h3>
-      <p class="note">{context["supplier_hhi_india_text"]}</p>
-      <div class="figure-row">
-        <figure><a class="figure-link" href="assets/figures/ex4_india_supplier_hhi_time.png"><img src="assets/figures/ex4_india_supplier_hhi_time.png" alt="India supplier HHI decomposition over time"></a><figcaption>India: weighted supplier HHI, equal-product-weight benchmark, and product-weight amplification.</figcaption></figure>
-        <figure><a class="figure-link" href="assets/figures/ex4_india_supplier_hhi_bubble.png"><img src="assets/figures/ex4_india_supplier_hhi_bubble.png" alt="India product import share versus supplier HHI bubble chart"></a><figcaption>India latest year: larger products on the x-axis, within-product supplier HHI on the y-axis.</figcaption></figure>
-      </div>
-      <div class="figure-row full-width">
-        <figure><a class="figure-link" href="assets/figures/ex4_india_supplier_hhi_top.png"><img src="assets/figures/ex4_india_supplier_hhi_top.png" alt="India top product contributions to weighted supplier HHI"></a><figcaption>India latest year: HS6 products with the largest contribution to weighted supplier HHI.</figcaption></figure>
-      </div>
-      {context["supplier_hhi_india_top_table"]}
+      {context["partner_counterfactual_latest_table"]}
     </section>
 
     <section class="section" id="io-linkage">
@@ -1763,7 +1724,8 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
           <li><strong>Partner Gini:</strong> concentration across destination or source partner totals within a country-year-flow.</li>
           <li><strong>Product-partner cell Gini:</strong> concentration across HS6 product-by-partner cells within a country-year-flow; this is the product-partner/partner-product measure.</li>
           <li><strong>Within-product supplier HHI:</strong> concentration across supplier countries inside one importer-year-HS6 product.</li>
-          <li><strong>Weighted supplier HHI:</strong> import-value-weighted average of within-product supplier HHI across all HS6 products in an importer-year.</li>
+          <li><strong>Partner-Gini counterfactual:</strong> recomputes Partner Gini after each HS6 product is split equally across its observed suppliers.</li>
+          <li><strong>Full-diffusion upper bound:</strong> recomputes Partner Gini after each HS6 product is split equally across every active partner in the importer-year.</li>
           <li><strong>Lumpy-product exclusions:</strong> HS27 oil/mineral fuels, HS71 precious stones/metals, HS88 aircraft, HS89 ships, and HS93 arms.</li>
           <li><strong>HS2-preserving benchmark:</strong> randomizes within broad HS2 sectors while preserving HS2 totals and active HS6 counts; it is a conditional benchmark, not complete randomization.</li>
         </ul>
