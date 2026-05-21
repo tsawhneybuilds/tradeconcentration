@@ -1307,6 +1307,7 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             <p><strong>Actual Partner Gini</strong> is computed across source countries after summing imports over all HS6 products: <code>Gini_j(sum_p imports_pj)</code>.</p>
             <p><strong>Conservative counterfactual</strong> keeps each product's total imports and observed supplier set fixed, but gives every observed supplier the same product share: <code>imports_pj = product_total_p / observed_suppliers_p</code>. The remaining Gini is the residual partner concentration after within-product supplier dominance is neutralized.</p>
             <p><strong>Explained share</strong> is <code>(actual Partner Gini - counterfactual Partner Gini) / actual Partner Gini</code>. Negative values are allowed. The <strong>full-diffusion upper bound</strong> spreads every product equally across all active partners in the country-year; it is a deliberately strong benchmark and collapses Partner Gini to zero by construction.</p>
+            <p><strong>Dashed 0.5 line:</strong> a symmetric random positive share vector across many active items has Gini around 0.5. In Product-Gini charts those items are active products; in these Exercise 4 Partner-Gini charts, read the line as the same rough benchmark across active source partners.</p>
           </div>
         """,
         "partner_counterfactual_latest_table": table_rows(
@@ -1647,7 +1648,7 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       </div>
       {context["partner_counterfactual_definitions"]}
       <div class="note">
-        <p><strong>Interpretation rule:</strong> the teal part of the latest-country chart is the amount of aggregate Partner Gini removed by equalizing suppliers within each observed HS6 product. The gray part is the residual Partner Gini left after that equalization. The full-diffusion benchmark is shown only as an upper bound because it also equalizes products across partners that were not observed supplying that product.</p>
+        <p><strong>Interpretation rule:</strong> the teal part of the latest-country chart is the amount of aggregate Partner Gini removed by equalizing suppliers within each observed HS6 product. The gray part is the residual Partner Gini left after that equalization. The dashed 0.5 line marks the symmetric random share-vector benchmark, not perfect equality. The full-diffusion benchmark is shown only as an upper bound because it also equalizes products across partners that were not observed supplying that product.</p>
       </div>
       <div class="figure-row">
         <figure><a class="figure-link" href="assets/figures/ex4_partner_counterfactual_latest.png"><img src="assets/figures/ex4_partner_counterfactual_latest.png" alt="Latest-year import Partner Gini counterfactual decomposition"></a><figcaption>Actual Partner Gini equals the conservative counterfactual residual plus the within-product dominance contribution.</figcaption></figure>
