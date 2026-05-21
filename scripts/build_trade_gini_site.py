@@ -904,7 +904,7 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
                 "Imports are concentrated because each product has one dominant global source.",
                 "For many products, country imports come mostly from the top source country.",
                 "Import concentration remains high even when supplier shares within products are diffuse.",
-                f"Supports product-level supplier dominance, but with a value-weight caveat. The median product top-supplier share is {pct(ex4['summary'].get('median_top_supplier_share'))}; products above 75% top-supplier share are {pct(ex4['summary'].get('share_products_top_supplier_ge_75'))} of rows but {pct(ex4['summary'].get('import_value_share_products_top_supplier_ge_75'))} of value.",
+                f"Supports product-level supplier dominance mechanically, but not the stronger claim that more supplier concentration maps to more import value. The median product top-supplier share is {pct(ex4['summary'].get('median_top_supplier_share'))}; products above 75% top-supplier share are {pct(ex4['summary'].get('share_products_top_supplier_ge_75'))} of rows but only {pct(ex4['summary'].get('import_value_share_products_top_supplier_ge_75'))} of value. The value regression did not show that more concentrated supplier sourcing is associated with higher import value, so this should be read as evidence that suppliers are often concentrated within products, not that those concentrated products dominate the import bill.",
                 [
                     ("Supplier dominance", "#supplier-dominance"),
                     ("Supplier CSV", "assets/downloads/exercise_04_dominant_supplier_importer_summary.csv"),
