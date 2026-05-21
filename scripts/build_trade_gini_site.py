@@ -1253,20 +1253,14 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       {context["overview_cards"]}
     </section>
 
-    <section class="section two-col" id="sendable-brief">
+    <section class="section" id="sendable-brief">
       <article>
         <h2>Purpose of This Brief</h2>
-        <p>This brief is a concise empirical follow-up to the 2001 paper. It checks whether the concentration fact persists over time, whether it is mostly a lumpy-product artifact, and whether import concentration points to a processing-input mechanism.</p>
         <ul class="callout-list">
           <li><strong>Extension:</strong> the high product, partner, and product-partner concentration facts remain visible in the 33-country panel from 1988 to 2025.</li>
           <li><strong>Robustness:</strong> removing oil, precious metals/gold, aircraft, ships, and arms lowers export concentration only modestly.</li>
           <li><strong>Mechanisms:</strong> import concentration has energy, supplier-dominance, and input-output pieces, but the broad intermediate-processing story is weakened by the product-level Exercise 11 regressions.</li>
         </ul>
-      </article>
-      <article class="note">
-        <h3>Discussion Ask</h3>
-        <p>The brief is organized to support a short follow-up conversation, not to claim the project is finished. The main question for a meeting is whether this extension is a useful summer direction and which parts should become formal paper evidence.</p>
-        <p>The strongest next step is to connect concentration to export dynamics: do concentrated countries grow by deepening current top products and partners, or by adding new products, destinations, and product-partner cells?</p>
       </article>
     </section>
 
