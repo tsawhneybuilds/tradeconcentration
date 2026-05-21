@@ -32,6 +32,7 @@ INDIA_FIGURE = FIGURE_DIR / "india_partner_gini_counterfactual_timeseries.png"
 CELL_COLUMNS = ["reporter_code", "year", "cmd_code", "partner_code", "trade_value"]
 DEFAULT_GINI_VALIDATION_TOLERANCE = 0.012
 TOTAL_TOLERANCE_RELATIVE = 1e-8
+RANDOM_SHARE_VECTOR_GINI = 0.5
 
 
 def gini(values: pd.Series | np.ndarray | list[float]) -> float:
@@ -293,6 +294,21 @@ def save_latest_figure(latest: pd.DataFrame) -> None:
     if np.any(negative < 0):
         ax.barh(y, negative, left=residual, color="#b91c1c", label="Negative contribution")
     ax.scatter(rows["actual_partner_gini"], y, color="#111827", s=16, zorder=3, label="Actual Partner Gini")
+    ax.axvline(
+        RANDOM_SHARE_VECTOR_GINI,
+        color="#dc2626",
+        linestyle="--",
+        linewidth=1.3,
+        label="Random share vector ~0.5",
+    )
+    ax.text(
+        RANDOM_SHARE_VECTOR_GINI + 0.006,
+        len(rows) - 0.8,
+        "Random share\nvector ~0.5",
+        color="#991b1b",
+        fontsize=8,
+        va="top",
+    )
     ax.set_yticks(y, rows["iso3"])
     ax.set_title("Latest available year: import Partner Gini counterfactual decomposition")
     ax.set_xlabel("Import Partner Gini")
@@ -330,6 +346,21 @@ def save_india_figure(country_year: pd.DataFrame) -> None:
     )
     ax.set_title("India: import Partner Gini under within-product supplier equalization")
     ax.set_ylabel("Partner Gini")
+    ax.axhline(
+        RANDOM_SHARE_VECTOR_GINI,
+        color="#dc2626",
+        linestyle="--",
+        linewidth=1.2,
+        label="Random share vector ~0.5",
+    )
+    ax.text(
+        india["year"].min(),
+        RANDOM_SHARE_VECTOR_GINI + 0.008,
+        "Random share vector ~0.5",
+        color="#991b1b",
+        fontsize=8,
+        va="bottom",
+    )
     ax.grid(True, color="#e5e7eb")
     ax.legend(loc="best")
 
