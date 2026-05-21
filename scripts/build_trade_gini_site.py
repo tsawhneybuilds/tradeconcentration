@@ -1238,7 +1238,6 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       <div class="hero-actions">
         <a class="button primary" href="extension.html">Explore the extension</a>
         <a class="button" href="imports.html">View import mechanisms</a>
-        <a class="button" href="#next-steps">Discuss next steps</a>
       </div>
     </section>
 
@@ -1276,32 +1275,11 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       </article>
     </section>
 
-    <section class="section" id="next-steps">
-      <div class="section-heading">
-        <h2>Next Question: Where Did Export Growth Come From?</h2>
-        <p>The current site establishes that concentration is persistent and then tests a few explanations. The next pass should ask how export baskets actually change after a concentrated base year.</p>
-      </div>
-      <div class="next-step-grid">
-        <article class="note">
-          <h3>Why this matters</h3>
-          <p>The more interesting follow-up is not only whether concentration is high, but whether high-concentration countries grow by intensifying existing strengths or by discovering new products and destinations.</p>
-        </article>
-        <article class="note">
-          <h3>What Exercise 12 looked like</h3>
-          <p>The Exercise 12 prototype is transition accounting, not a regression. It decomposes export growth into existing top items, existing non-top items, new items, and contractions across products, partners, and product-partner cells.</p>
-        </article>
-        <article class="note">
-          <h3>What to discuss next</h3>
-          <p>A meeting could decide which version is most useful: top-product persistence, destination upgrading, product-partner cell entry, or a growth decomposition that separates gross expansion from contraction and exit.</p>
-        </article>
-      </div>
-    </section>
 
     <section class="section link-grid">
       <a href="extension.html"><span>01</span><strong>Extending 2001</strong><small>World map, country lines, top-share facts, exclusions, and null benchmarks.</small></a>
       <a href="imports.html"><span>02</span><strong>Imports</strong><small>Energy, intermediates, dominant suppliers, and input-output linkages.</small></a>
       <a href="methods.html"><span>03</span><strong>Methods</strong><small>Data coverage, definitions, and downloadable CSVs.</small></a>
-      <a href="#next-steps"><span>04</span><strong>Next steps</strong><small>Growth transition accounting and questions for the next conversation.</small></a>
     </section>
     """
 
