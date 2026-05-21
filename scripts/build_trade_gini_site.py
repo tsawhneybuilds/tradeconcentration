@@ -2097,6 +2097,18 @@ def site_js() -> str:
     return (DATA.exercise1?.panel || []).filter((row) => row.flow === flow && Number(row.year) === Number(year) && row[metric] !== null);
   }
 
+  function mapScaleRange(flow, metric) {
+    const values = (DATA.exercise1?.panel || [])
+      .filter((row) => row.flow === flow && row[metric] !== null)
+      .map((row) => Number(row[metric]))
+      .filter((value) => Number.isFinite(value));
+    if (!values.length) return null;
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    if (min === max) return null;
+    return { min, max };
+  }
+
   function currentMapYear() {
     return byId('map-year-slider')?.value || byId('map-year')?.value;
   }
@@ -2131,6 +2143,7 @@ def site_js() -> str:
     const metric = byId('map-metric').value;
     const year = currentMapYear();
     const rows = rowsFor(flow, metric, year);
+    const scaleRange = mapScaleRange(flow, metric);
     const trace = {
       type: 'choropleth',
       locations: rows.map((r) => r.iso3),
@@ -2142,6 +2155,9 @@ def site_js() -> str:
         [0.5, '#2dd4bf'],
         [1, '#0f172a']
       ],
+      zauto: !scaleRange,
+      zmin: scaleRange?.min,
+      zmax: scaleRange?.max,
       colorbar: { title: DATA.labels?.metrics?.[metric] || metric },
       marker: { line: { color: '#ffffff', width: 0.4 } },
       hovertemplate: '<b>%{text}</b><br>Gini: %{z:.3f}<extra></extra>'
