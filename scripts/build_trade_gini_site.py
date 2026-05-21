@@ -28,33 +28,37 @@ PDF_GUIDANCE = Path("/Users/tanushsawhney/Downloads/Untitled document.pdf")
 
 SOURCE_FILES = {
     "exercise_1_panel": ROOT / "results/exercise_01_tables/concentration_all_years.csv",
-    "exercise_1_top5_summary": ROOT / "results/exercise_01_tables/top5_trade_concentration_summary.csv",
-    "exercise_1_top5_latest": ROOT / "results/exercise_01_tables/top5_trade_concentration_latest_summary.csv",
-    "exercise_1_top5_frequency": ROOT / "results/exercise_01_tables/top5_item_frequency_latest.csv",
-    "exercise_1_top5_leave_one_out": ROOT / "results/exercise_01_tables/top5_item_leave_one_out_latest.csv",
     "exercise_2_growth": ROOT / "results/exercise_02_tables/bucket_growth_summary.csv",
     "exercise_3_bins": ROOT / "results/exercise_03_tables/import_bin_concentration.csv",
     "exercise_3_decomposition": ROOT / "results/exercise_03_tables/import_bin_decomposition.csv",
     "exercise_3_total": ROOT / "results/exercise_03_tables/import_total_concentration.csv",
     "exercise_4_suppliers": ROOT / "results/exercise_04_tables/dominant_supplier_importer_summary.csv",
+    "exercise_4_supplier_decomp_country_year": ROOT / "results/exercise_04_tables/supplier_hhi_decomposition_country_year.csv",
+    "exercise_4_supplier_decomp_latest": ROOT / "results/exercise_04_tables/supplier_hhi_decomposition_latest.csv",
+    "exercise_4_supplier_decomp_india": ROOT / "results/exercise_04_tables/india_supplier_hhi_decomposition_timeseries.csv",
+    "exercise_4_supplier_decomp_india_top": ROOT / "results/exercise_04_tables/india_supplier_hhi_top_contributing_products.csv",
     "exercise_6_exclusions": ROOT / "results/exercise_06_tables/concentration_exclusions_all_years.csv",
     "exercise_10_hs2": ROOT / "results/exercise_10_tables/random_benchmark_hs2_product_all_years.csv",
     "exercise_10_active": ROOT / "results/exercise_10_tables/random_benchmark_active_count_null_all_years.csv",
     "exercise_11_io_summary": ROOT / "results/exercise_11_tables/country_year_input_output_linkage_summary.csv",
     "exercise_11_coefficients": ROOT / "results/exercise_11_product_export_linkage_tables/selected_regression_coefficients.csv",
     "exercise_11_intermediate_effects": ROOT / "results/exercise_11_product_export_linkage_tables/intermediate_effects.csv",
+    "exercise_11_hs2_panel": ROOT / "results/exercise_11_product_export_linkage_tables/hs2_export_linkage_panel.csv",
     "exercise_11_hs2_regressions": ROOT / "results/exercise_11_product_export_linkage_tables/hs2_regressions.csv",
     "exercise_11_commodity_comparison": ROOT / "results/exercise_11_product_export_linkage_tables/commodity_exclusion_regression_comparison.csv",
     "exercise_11_commodity_stats": ROOT / "results/exercise_11_product_export_linkage_tables/commodity_outlier_exclusion_stats.csv",
 }
 
 FIGURES = {
-    "ex1_loo_all_reporters": ROOT / "results/exercise_01_figures/top5_item_leave_one_out_latest_all_reporters.png",
-    "ex1_loo_top5_reporters": ROOT / "results/exercise_01_figures/top5_item_leave_one_out_latest_top5_reporters.png",
     "ex3_value_share": ROOT / "results/exercise_03_figures/median_import_value_share_by_bin.png",
     "ex3_leave_one_out": ROOT / "results/exercise_03_figures/latest_year_gini_reduction_when_bin_excluded.png",
     "ex4_supplier_time": ROOT / "results/exercise_04_figures/dominant_supplier_summary_over_time.png",
     "ex4_supplier_distribution": ROOT / "results/exercise_04_figures/latest_year_top_supplier_share_distribution.png",
+    "ex4_supplier_hhi_scatter": ROOT / "results/exercise_04_figures/supplier_hhi_vs_product_gini_latest.png",
+    "ex4_supplier_hhi_decomposition": ROOT / "results/exercise_04_figures/supplier_hhi_decomposition_latest.png",
+    "ex4_india_supplier_hhi_time": ROOT / "results/exercise_04_figures/india_supplier_hhi_decomposition_timeseries.png",
+    "ex4_india_supplier_hhi_bubble": ROOT / "results/exercise_04_figures/india_supplier_hhi_bubble_latest.png",
+    "ex4_india_supplier_hhi_top": ROOT / "results/exercise_04_figures/india_supplier_hhi_top_products_latest.png",
     "ex6_before_after": ROOT / "results/exercise_06_figures/before_after_product_gini_over_time.png",
     "ex6_removed": ROOT / "results/exercise_06_figures/trade_share_removed_over_time.png",
     "ex10_actual_vs_benchmark": ROOT / "results/exercise_10_figures/actual_vs_simulated_gini_product_hs2_preserved.png",
@@ -68,10 +72,12 @@ FIGURES = {
 
 DOWNLOADS = {
     "exercise_01_concentration_all_years.csv": SOURCE_FILES["exercise_1_panel"],
-    "exercise_01_top5_latest_summary.csv": SOURCE_FILES["exercise_1_top5_latest"],
-    "exercise_01_top5_item_leave_one_out_latest.csv": SOURCE_FILES["exercise_1_top5_leave_one_out"],
     "exercise_03_import_bin_concentration.csv": SOURCE_FILES["exercise_3_bins"],
     "exercise_04_dominant_supplier_importer_summary.csv": SOURCE_FILES["exercise_4_suppliers"],
+    "exercise_04_supplier_hhi_decomposition_country_year.csv": SOURCE_FILES["exercise_4_supplier_decomp_country_year"],
+    "exercise_04_supplier_hhi_decomposition_latest.csv": SOURCE_FILES["exercise_4_supplier_decomp_latest"],
+    "exercise_04_india_supplier_hhi_decomposition_timeseries.csv": SOURCE_FILES["exercise_4_supplier_decomp_india"],
+    "exercise_04_india_supplier_hhi_top_contributing_products.csv": SOURCE_FILES["exercise_4_supplier_decomp_india_top"],
     "exercise_06_concentration_exclusions_all_years.csv": SOURCE_FILES["exercise_6_exclusions"],
     "exercise_10_hs2_product_benchmark_all_years.csv": SOURCE_FILES["exercise_10_hs2"],
     "exercise_11_country_year_input_output_linkage_summary.csv": SOURCE_FILES["exercise_11_io_summary"],
@@ -101,6 +107,106 @@ BIN_LABELS = {
     "final_consumption": "Final consumption",
     "intermediates": "Intermediates",
     "unmapped_or_ambiguous": "Unmapped or ambiguous",
+}
+HS2_LABELS = {
+    "01": "Live animals",
+    "02": "Meat and edible meat offal",
+    "03": "Fish and crustaceans",
+    "04": "Dairy, eggs, honey, edible animal products",
+    "05": "Other animal-origin products",
+    "06": "Live trees and plants",
+    "07": "Vegetables, roots, and tubers",
+    "08": "Fruit and nuts",
+    "09": "Coffee, tea, mate, and spices",
+    "10": "Cereals",
+    "11": "Milling products, malt, and starches",
+    "12": "Oil seeds and medicinal plants",
+    "13": "Lac, gums, resins, and saps",
+    "14": "Vegetable plaiting materials",
+    "15": "Animal, vegetable, or microbial fats and oils",
+    "16": "Preparations of meat, fish, or crustaceans",
+    "17": "Sugars and confectionery",
+    "18": "Cocoa and cocoa preparations",
+    "19": "Preparations of cereals, flour, or milk",
+    "20": "Preparations of vegetables, fruit, or nuts",
+    "21": "Miscellaneous edible preparations",
+    "22": "Beverages, spirits, and vinegar",
+    "23": "Food-industry residues and animal feed",
+    "24": "Tobacco and manufactured tobacco substitutes",
+    "25": "Salt, sulfur, earths, stone, lime, and cement",
+    "26": "Ores, slag, and ash",
+    "27": "Mineral fuels, oils, and petroleum",
+    "28": "Inorganic chemicals",
+    "29": "Organic chemicals",
+    "30": "Pharmaceutical products",
+    "31": "Fertilizers",
+    "32": "Tanning, dyeing extracts, pigments, and paints",
+    "33": "Essential oils, perfumes, and cosmetics",
+    "34": "Soap, waxes, and cleaning preparations",
+    "35": "Albuminoidal substances, glues, and enzymes",
+    "36": "Explosives and pyrotechnics",
+    "37": "Photographic and cinematographic goods",
+    "38": "Miscellaneous chemical products",
+    "39": "Plastics and articles thereof",
+    "40": "Rubber and articles thereof",
+    "41": "Raw hides, skins, and leather",
+    "42": "Leather articles and travel goods",
+    "43": "Furskins and artificial fur",
+    "44": "Wood and wood articles",
+    "45": "Cork and cork articles",
+    "46": "Straw, esparto, and basketware",
+    "47": "Pulp of wood and recovered paper",
+    "48": "Paper and paperboard",
+    "49": "Printed books and printed matter",
+    "50": "Silk",
+    "51": "Wool and animal hair",
+    "52": "Cotton",
+    "53": "Other vegetable textile fibers",
+    "54": "Man-made filaments",
+    "55": "Man-made staple fibers",
+    "56": "Wadding, felt, nonwovens, yarns, and rope",
+    "57": "Carpets and textile floor coverings",
+    "58": "Special woven fabrics and lace",
+    "59": "Impregnated or coated textile fabrics",
+    "60": "Knitted or crocheted fabrics",
+    "61": "Knitted or crocheted apparel",
+    "62": "Non-knitted apparel",
+    "63": "Other made-up textile articles",
+    "64": "Footwear",
+    "65": "Headgear",
+    "66": "Umbrellas and walking sticks",
+    "67": "Feathers, artificial flowers, and hair articles",
+    "68": "Stone, plaster, cement, and asbestos articles",
+    "69": "Ceramic products",
+    "70": "Glass and glassware",
+    "71": "Precious stones, metals, and jewelry",
+    "72": "Iron and steel",
+    "73": "Articles of iron or steel",
+    "74": "Copper and articles thereof",
+    "75": "Nickel and articles thereof",
+    "76": "Aluminum and articles thereof",
+    "78": "Lead and articles thereof",
+    "79": "Zinc and articles thereof",
+    "80": "Tin and articles thereof",
+    "81": "Other base metals and cermets",
+    "82": "Tools, cutlery, and base-metal implements",
+    "83": "Miscellaneous base-metal articles",
+    "84": "Machinery and mechanical appliances",
+    "85": "Electrical machinery and equipment",
+    "86": "Railway and tramway equipment",
+    "87": "Vehicles and parts",
+    "88": "Aircraft and spacecraft",
+    "89": "Ships, boats, and floating structures",
+    "90": "Optical, medical, and precision instruments",
+    "91": "Clocks and watches",
+    "92": "Musical instruments",
+    "93": "Arms and ammunition",
+    "94": "Furniture, bedding, and lamps",
+    "95": "Toys, games, and sports equipment",
+    "96": "Miscellaneous manufactured articles",
+    "97": "Works of art and antiques",
+    "98": "Special classification provisions",
+    "99": "Commodities not elsewhere specified",
 }
 
 
@@ -164,35 +270,105 @@ def median_records(
     return clean_records(med, list(med.columns))
 
 
-def top_loo_highlights(top5_loo: pd.DataFrame) -> dict[str, Any]:
-    metrics = {
-        "all_reporters": "mean_loo_gini_contribution_all_reporters",
-        "top5_reporters": "mean_loo_gini_contribution_top5_reporters",
-    }
-    groups = {
-        "import_suppliers": ("Imports", "partner"),
-        "import_products": ("Imports", "product"),
-        "export_destinations": ("Exports", "partner"),
-        "export_products": ("Exports", "product"),
-    }
-    highlights: dict[str, Any] = {}
-    for metric_key, metric in metrics.items():
-        highlights[metric_key] = {}
-        for group_key, (flow, dimension) in groups.items():
-            sub = top5_loo[(top5_loo["flow"].eq(flow)) & (top5_loo["dimension"].eq(dimension))].copy()
-            sub[metric] = pd.to_numeric(sub[metric], errors="coerce")
-            sub["top5_reporter_count"] = pd.to_numeric(sub["top5_reporter_count"], errors="coerce")
-            sub = sub.sort_values(metric, ascending=False).head(8)
-            highlights[metric_key][group_key] = clean_records(
-                sub,
-                [
-                    "display_label",
-                    "top5_reporter_count",
-                    "mean_loo_gini_contribution_all_reporters",
-                    "mean_loo_gini_contribution_top5_reporters",
-                ],
+def hs2_display_label(code: Any) -> str:
+    clean_code = str(code).zfill(2)[:2]
+    return f"HS{clean_code} - {HS2_LABELS.get(clean_code, 'HS chapter')}"
+
+
+def hs2_linkage_summary(hs2: pd.DataFrame) -> dict[str, list[dict[str, Any]]]:
+    if hs2.empty:
+        return {"deciles": [], "chapters": []}
+
+    work = hs2.copy()
+    work["hs2"] = work["hs2"].astype(str).str.zfill(2).str[:2]
+    work["hs2_label"] = work["hs2"].map(lambda code: HS2_LABELS.get(code, "HS chapter"))
+    for column in [
+        "hs2_product_loo_gini_sum",
+        "hs2_export_any",
+        "asinh_hs2_export_value",
+        "hs2_export_value",
+        "hs2_export_share",
+        "hs2_import_value_share",
+        "hs2_intermediate_import_share",
+    ]:
+        work[column] = pd.to_numeric(work[column], errors="coerce")
+    work = work.replace([np.inf, -np.inf], np.nan).dropna(subset=["hs2_product_loo_gini_sum"])
+    if work.empty:
+        return {"deciles": [], "chapters": []}
+
+    work["loo_decile"] = pd.qcut(work["hs2_product_loo_gini_sum"], 10, labels=False, duplicates="drop")
+    work = work.dropna(subset=["loo_decile"]).copy()
+    work["loo_decile"] = work["loo_decile"].astype(int) + 1
+
+    decile_rows: list[dict[str, Any]] = []
+    for decile, group in work.groupby("loo_decile", sort=True):
+        chapter_rank = (
+            group.groupby(["hs2", "hs2_label"], as_index=False)
+            .agg(
+                mean_import_share=("hs2_import_value_share", "mean"),
+                observations=("hs2", "size"),
             )
-    return highlights
+            .sort_values(["mean_import_share", "observations", "hs2"], ascending=[False, False, True])
+            .head(5)
+        )
+        top_chapters = "<br>".join(
+            f"HS{row.hs2} {row.hs2_label} ({pct(row.mean_import_share)})"
+            for row in chapter_rank.itertuples(index=False)
+        )
+        decile_rows.append(
+            {
+                "decile": int(decile),
+                "mean_loo_gini": clean_scalar(group["hs2_product_loo_gini_sum"].mean()),
+                "min_loo_gini": clean_scalar(group["hs2_product_loo_gini_sum"].min()),
+                "max_loo_gini": clean_scalar(group["hs2_product_loo_gini_sum"].max()),
+                "export_probability": clean_scalar(group["hs2_export_any"].mean()),
+                "mean_asinh_export_value": clean_scalar(group["asinh_hs2_export_value"].mean()),
+                "mean_export_value": clean_scalar(group["hs2_export_value"].mean()),
+                "mean_export_share": clean_scalar(group["hs2_export_share"].mean()),
+                "mean_import_share": clean_scalar(group["hs2_import_value_share"].mean()),
+                "mean_intermediate_import_share": clean_scalar(group["hs2_intermediate_import_share"].mean()),
+                "observations": int(len(group)),
+                "chapter_count": int(group["hs2"].nunique()),
+                "top_chapters": top_chapters,
+            }
+        )
+
+    chapters = (
+        work.groupby(["hs2", "hs2_label"], as_index=False)
+        .agg(
+            mean_loo_gini=("hs2_product_loo_gini_sum", "mean"),
+            export_probability=("hs2_export_any", "mean"),
+            mean_asinh_export_value=("asinh_hs2_export_value", "mean"),
+            mean_export_value=("hs2_export_value", "mean"),
+            mean_export_share=("hs2_export_share", "mean"),
+            mean_import_share=("hs2_import_value_share", "mean"),
+            mean_intermediate_import_share=("hs2_intermediate_import_share", "mean"),
+            observations=("hs2", "size"),
+            countries=("iso3", "nunique"),
+            years=("year", "nunique"),
+        )
+        .sort_values("hs2")
+    )
+    chapters["display_label"] = chapters["hs2"].map(hs2_display_label)
+    chapter_rows = clean_records(
+        chapters,
+        [
+            "hs2",
+            "hs2_label",
+            "display_label",
+            "mean_loo_gini",
+            "export_probability",
+            "mean_asinh_export_value",
+            "mean_export_value",
+            "mean_export_share",
+            "mean_import_share",
+            "mean_intermediate_import_share",
+            "observations",
+            "countries",
+            "years",
+        ],
+    )
+    return {"deciles": decile_rows, "chapters": chapter_rows}
 
 
 def pick_regression_row(
@@ -262,6 +438,8 @@ def table_rows(rows: list[dict[str, Any]], columns: list[tuple[str, str, str]]) 
                 text = dec(value)
             elif kind == "money":
                 text = money(value)
+            elif kind == "year":
+                text = "n/a" if value is None else str(int(value))
             elif kind == "int":
                 text = "n/a" if value is None else f"{int(value):,}"
             else:
@@ -365,21 +543,22 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
         ex1[column] = pd.to_numeric(ex1[column], errors="coerce")
     shape = validate_source_shapes(ex1)
 
-    top5 = read_csv("exercise_1_top5_summary")
-    top5_latest = read_csv("exercise_1_top5_latest")
-    top5_freq = read_csv("exercise_1_top5_frequency")
-    top5_loo = read_csv("exercise_1_top5_leave_one_out")
     growth = read_csv("exercise_2_growth")
     bins = read_csv("exercise_3_bins")
     decomp = read_csv("exercise_3_decomposition")
     total_import = read_csv("exercise_3_total")
     suppliers = read_csv("exercise_4_suppliers")
+    supplier_decomp = read_csv("exercise_4_supplier_decomp_country_year")
+    supplier_decomp_latest = read_csv("exercise_4_supplier_decomp_latest")
+    supplier_decomp_india = read_csv("exercise_4_supplier_decomp_india")
+    supplier_decomp_india_top = read_csv("exercise_4_supplier_decomp_india_top")
     exclusions = read_csv("exercise_6_exclusions")
     hs2 = read_csv("exercise_10_hs2")
     active = read_csv("exercise_10_active")
     io = read_csv("exercise_11_io_summary")
     coefs = read_csv("exercise_11_coefficients")
     intermediate_effects = read_csv("exercise_11_intermediate_effects")
+    hs2_panel = read_csv("exercise_11_hs2_panel")
     hs2_regressions = read_csv("exercise_11_hs2_regressions")
     commodity_comparison = read_csv("exercise_11_commodity_comparison")
     commodity_stats = read_csv("exercise_11_commodity_stats")
@@ -440,17 +619,6 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
     country_panel = clean_records(ex1.sort_values(["country", "year", "flow"]), panel_columns)
     latest_map = clean_records(ex1[ex1["year"].eq(map_year)].sort_values(["flow", "country"]), panel_columns)
     countries = clean_records(ex1[["iso3", "country"]].drop_duplicates().sort_values("country"), ["iso3", "country"])
-
-    top5_latest_med = (
-        top5_latest.groupby(["flow", "dimension"])[["top_1_item_share", "cumulative_top_5_share", "gini", "active_count"]]
-        .median(numeric_only=True)
-        .reset_index()
-        .sort_values(["flow", "dimension"])
-    )
-    top5_frequency = top5_freq.sort_values(
-        ["flow", "dimension", "reporter_count", "weighted_mean_share"], ascending=[True, True, False, False]
-    )
-    top5_frequency = top5_frequency.groupby(["flow", "dimension"]).head(6).reset_index(drop=True)
 
     growth_summary = clean_records(
         growth.sort_values(["horizon", "concentration_bucket"]),
@@ -571,6 +739,31 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
         int(suppliers.loc[suppliers["year"].eq(latest_supplier_year), "iso3"].nunique()) if latest_supplier_year else None
     )
     india_latest_year = int(suppliers.loc[suppliers["iso3"].eq("IND"), "year"].max()) if not suppliers[suppliers["iso3"].eq("IND")].empty else None
+    for frame in [supplier_decomp, supplier_decomp_latest, supplier_decomp_india, supplier_decomp_india_top]:
+        for column in frame.columns:
+            if column not in {"country", "iso3", "cmd_code", "top_supplier_iso3", "top_supplier_name"}:
+                frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    supplier_decomp_latest = supplier_decomp_latest.sort_values(
+        ["weighted_supplier_hhi", "country"], ascending=[False, True]
+    ).reset_index(drop=True)
+    supplier_decomp_india = supplier_decomp_india.sort_values("year").reset_index(drop=True)
+    if "cmd_code" in supplier_decomp_india_top.columns:
+        supplier_decomp_india_top["cmd_code"] = supplier_decomp_india_top["cmd_code"].astype(str).str.zfill(6)
+    supplier_decomp_india_top = supplier_decomp_india_top.sort_values(
+        "hhi_contribution", ascending=False
+    ).reset_index(drop=True)
+    supplier_decomp_summary = supplier_decomp_latest[
+        [
+            "weighted_supplier_hhi",
+            "equal_weight_supplier_hhi",
+            "top_supplier_component_share",
+            "product_weight_amplification",
+            "product_weight_amplification_pct",
+        ]
+    ].median(numeric_only=True)
+    supplier_decomp_india_latest = (
+        supplier_decomp_india.iloc[-1] if not supplier_decomp_india.empty else pd.Series(dtype=object)
+    )
 
     io_valid = io.dropna(subset=["weighted_top_sector_input_product_gini"]).copy()
     io_medians = io_valid[
@@ -619,13 +812,14 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
         "hs2_export_value_intermediate_intensity",
         "hs2_product_loo_gini_sum_x_intermediate_share_z",
     )
+    hs2_linkage = hs2_linkage_summary(hs2_panel)
 
     ex11_regression_summary = [
-        regression_display_row("HS6 product-Gini contribution", hs6_value, "Negative export-value linkage"),
+        regression_display_row("HS6 Product-Gini contribution", hs6_value, "Negative export-value linkage"),
         regression_display_row("HS6 export probability", hs6_any, "Negative export-probability linkage"),
         regression_display_row("HS6 supplier-country HHI contribution", partner_hhi, "Positive export-value linkage"),
         regression_display_row("Intermediate interaction", intermediate_interaction, "Intermediates are not more export-linked"),
-        regression_display_row("HS2 product-Gini contribution", hs2_value, "Still negative after broadening to HS2"),
+        regression_display_row("HS2 Product-Gini contribution", hs2_value, "Still negative after broadening to HS2"),
         regression_display_row("HS2 export probability", hs2_any, "Small and not statistically distinguishable from zero"),
         regression_display_row("HS2 export share", hs2_share, "Small and not statistically distinguishable from zero"),
         regression_display_row("HS2 intermediate-intensity interaction", hs2_interaction, "Does not rescue the intermediate channel"),
@@ -636,17 +830,22 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
             commodity_comparison["sample"].astype(str).isin(["baseline", "excluding oil/gas/gold/coal"])
         )
         & (
-            commodity_comparison["check"].astype(str).isin(
+            commodity_comparison["check"].astype(str).str.lower().isin(
                 [
-                    "Export value: product-Gini contribution",
-                    "Export probability: product-Gini contribution",
-                    "Export value: partner-HHI contribution",
-                    "Intermediate interaction",
+                    "export value: product-gini contribution",
+                    "export probability: product-gini contribution",
+                    "export value: partner-hhi contribution",
+                    "intermediate interaction",
                 ]
             )
         )
     ].copy()
     commodity_summary_rows["result"] = commodity_summary_rows["sample"].astype(str) + " - " + commodity_summary_rows["check"].astype(str)
+    commodity_summary_rows["result"] = (
+        commodity_summary_rows["result"]
+        .str.replace("product-Gini", "Product-Gini", regex=False)
+        .str.replace("partner-HHI", "Partner-HHI", regex=False)
+    )
 
     commodity_stats_map = {
         str(row["measure"]): clean_scalar(row["value"])
@@ -672,21 +871,6 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
             "latest_map": latest_map,
             "median_by_flow": clean_records(ex1_medians, list(ex1_medians.columns)),
             "selected_year_medians": clean_records(ex1_year_medians, list(ex1_year_medians.columns)),
-            "top5_latest_medians": clean_records(top5_latest_med, list(top5_latest_med.columns)),
-            "top5_frequency_latest": clean_records(
-                top5_frequency,
-                [
-                    "flow",
-                    "dimension",
-                    "display_label",
-                    "reporter_count",
-                    "reporter_share",
-                    "mean_rank",
-                    "median_share",
-                    "weighted_mean_share",
-                ],
-            ),
-            "top5_leave_one_out_highlights": top_loo_highlights(top5_loo),
         },
         "exercise2": {"growth_summary": growth_summary},
         "exercise3": {
@@ -712,6 +896,63 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
             "latest_year": latest_supplier_year,
             "latest_reporter_count": latest_supplier_reporter_count,
             "india_latest_year": india_latest_year,
+            "supplier_hhi_decomposition": {
+                "summary": {key: clean_scalar(value) for key, value in supplier_decomp_summary.items()},
+                "latest": clean_records(
+                    supplier_decomp_latest,
+                    [
+                        "country",
+                        "iso3",
+                        "year",
+                        "product_gini",
+                        "weighted_supplier_hhi",
+                        "equal_weight_supplier_hhi",
+                        "product_weight_amplification",
+                        "product_weight_amplification_pct",
+                        "top_supplier_component_share",
+                        "import_value_share_products_top_supplier_ge_75",
+                    ],
+                ),
+                "india_latest": {
+                    key: clean_scalar(supplier_decomp_india_latest.get(key))
+                    for key in [
+                        "year",
+                        "weighted_supplier_hhi",
+                        "equal_weight_supplier_hhi",
+                        "product_weight_amplification",
+                        "product_weight_amplification_pct",
+                        "top_supplier_component_share",
+                        "weighted_top_supplier_share",
+                        "import_value_share_products_top_supplier_ge_75",
+                    ]
+                },
+                "india_year_series": clean_records(
+                    supplier_decomp_india,
+                    [
+                        "year",
+                        "weighted_supplier_hhi",
+                        "equal_weight_supplier_hhi",
+                        "product_weight_amplification",
+                        "product_weight_amplification_pct",
+                        "top_supplier_component_share",
+                    ],
+                ),
+                "india_top_products": clean_records(
+                    supplier_decomp_india_top.head(15),
+                    [
+                        "cmd_code",
+                        "total_product_imports",
+                        "product_import_share",
+                        "source_hhi",
+                        "top_supplier_iso3",
+                        "top_supplier_name",
+                        "top_supplier_share",
+                        "supplier_count",
+                        "hhi_contribution",
+                        "hhi_contribution_share",
+                    ],
+                ),
+            },
         },
         "exercise6": {
             "median_by_variant": clean_records(exclusion_medians, list(exclusion_medians.columns)),
@@ -743,6 +984,7 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
                 intermediate_effects,
                 ["effect", "coef", "std_error", "ci_low", "ci_high"],
             ),
+            "hs2_linkage": hs2_linkage,
             "commodity_comparison": clean_records(
                 commodity_summary_rows,
                 ["result", "sample", "check", "outcome", "term", "coef", "std_error", "p_value", "nobs", "clusters", "r2_within"],
@@ -781,22 +1023,20 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
     energy = find_value(ex3["bin_summary"], import_bin="energy")
     intermediates = find_value(ex3["bin_summary"], import_bin="intermediates")
     india_supplier = ex4["india_2024"]
+    supplier_hhi = ex4.get("supplier_hhi_decomposition", {})
+    supplier_hhi_summary = supplier_hhi.get("summary", {})
+    supplier_hhi_india = supplier_hhi.get("india_latest", {})
     latest_supplier_year = int(ex4.get("latest_year")) if ex4.get("latest_year") else 2025
     latest_supplier_reporter_count = int(ex4.get("latest_reporter_count")) if ex4.get("latest_reporter_count") else 0
     india_supplier_year = int(ex4.get("india_latest_year")) if ex4.get("india_latest_year") else int(india_supplier.get("year", 2024))
     india_io = ex11["india_latest"]
-    loo = ex1["top5_leave_one_out_highlights"]
-    all_import_supplier = loo["all_reporters"]["import_suppliers"][0]
-    all_export_destination = loo["all_reporters"]["export_destinations"][0]
-    all_import_product = loo["all_reporters"]["import_products"][0]
-    all_export_product = loo["all_reporters"]["export_products"][0]
-    conditional_import_supplier = loo["top5_reporters"]["import_suppliers"][0]
-    conditional_export_destination = loo["top5_reporters"]["export_destinations"][0]
-    ex11_main = find_value(ex11["coefficients"], result="HS6 product-Gini contribution")
+    ex11_main = find_value(ex11["coefficients"], result="HS6 Product-Gini contribution")
     ex11_any = find_value(ex11["coefficients"], result="HS6 export probability")
     ex11_supplier = find_value(ex11["coefficients"], result="HS6 supplier-country HHI contribution")
     ex11_interaction = find_value(ex11["coefficients"], result="Intermediate interaction")
-    ex11_hs2_value = find_value(ex11["coefficients"], result="HS2 product-Gini contribution")
+    ex11_non_intermediate_slope = find_value(ex11["intermediate_effects"], effect="Non-intermediate slope")
+    ex11_intermediate_slope = find_value(ex11["intermediate_effects"], effect="Intermediate slope")
+    ex11_hs2_value = find_value(ex11["coefficients"], result="HS2 Product-Gini contribution")
     ex11_hs2_any = find_value(ex11["coefficients"], result="HS2 export probability")
     ex11_hs2_share = find_value(ex11["coefficients"], result="HS2 export share")
     ex11_hs2_interaction = find_value(ex11["coefficients"], result="HS2 intermediate-intensity interaction")
@@ -831,7 +1071,6 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
                 f"Supports. In the 33-country 1988-2025 panel, median Product Ginis across HS6 products are {dec(exp.get('product_gini'))} for exports and {dec(imp.get('product_gini'))} for imports, and median Product-partner cell Ginis across HS6-by-partner cells are {dec(exp.get('product_partner_cell_gini'))} and {dec(imp.get('product_partner_cell_gini'))}.",
                 [
                     ("Extension page", "extension.html#map-lines"),
-                    ("Top shares", "extension.html#top-share-evidence"),
                     ("Import mechanisms", "imports.html#import-bins"),
                     ("Data downloads", "methods.html#downloads"),
                 ],
@@ -847,11 +1086,9 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
                 "Concentration is a persistent aggregate fact, not a one-year artifact.",
                 "Product Gini and Partner Gini stay high across countries and years.",
                 "Concentration disappears or changes sharply by year/sample.",
-                f"Supports. Median export Product Gini across HS6 products rises from {dec(exp_1988.get('product_gini'))} in 1988 to {dec(exp_2025.get('product_gini'))} in 2025; import Product Gini rises from {dec(imp_1988.get('product_gini'))} to {dec(imp_2025.get('product_gini'))}. The top-share tables also show large latest-year top HS6-product and partner shares.",
+                f"Supports. Median export Product Gini across HS6 products rises from {dec(exp_1988.get('product_gini'))} in 1988 to {dec(exp_2025.get('product_gini'))} in 2025; import Product Gini rises from {dec(imp_1988.get('product_gini'))} to {dec(imp_2025.get('product_gini'))}.",
                 [
                     ("Map and lines", "#map-lines"),
-                    ("Top-share table", "#top-share-evidence"),
-                    ("Leave-one-out graphs", "#top-five-loo"),
                     ("Panel CSV", "assets/downloads/exercise_01_concentration_all_years.csv"),
                 ],
             ),
@@ -914,9 +1151,10 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
                 "Imports are concentrated because each product has one dominant global source.",
                 "For many products, country imports come mostly from the top source country.",
                 "Import concentration remains high even when supplier shares within products are diffuse.",
-                f"Supports product-level supplier dominance mechanically, but not the stronger claim that more supplier concentration maps to more import value. The median product top-supplier share is {pct(ex4['summary'].get('median_top_supplier_share'))}; products above 75% top-supplier share are {pct(ex4['summary'].get('share_products_top_supplier_ge_75'))} of rows but only {pct(ex4['summary'].get('import_value_share_products_top_supplier_ge_75'))} of value. The value regression did not show that more concentrated supplier sourcing is associated with higher import value, so this should be read as evidence that suppliers are often concentrated within products, not that those concentrated products dominate the import bill.",
+                f"Supports product-level supplier dominance mechanically, with a value-weight caveat. The median product top-supplier share is {pct(ex4['summary'].get('median_top_supplier_share'))}; products above 75% top-supplier share are {pct(ex4['summary'].get('share_products_top_supplier_ge_75'))} of rows but only {pct(ex4['summary'].get('import_value_share_products_top_supplier_ge_75'))} of value. In the latest-country decomposition, median weighted supplier HHI is {dec(supplier_hhi_summary.get('weighted_supplier_hhi'))}, and the top-supplier component explains {pct(supplier_hhi_summary.get('top_supplier_component_share'))} of it. But median product-weight amplification is {dec(supplier_hhi_summary.get('product_weight_amplification'))}, so large products are not generally more supplier-concentrated than the typical product.",
                 [
                     ("Supplier dominance", "#supplier-dominance"),
+                    ("Supplier HHI decomposition", "#supplier-hhi-decomposition"),
                     ("Supplier CSV", "assets/downloads/exercise_04_dominant_supplier_importer_summary.csv"),
                 ],
             ),
@@ -988,24 +1226,6 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             "Country lines stay high across decades rather than collapsing after the 2001 cross-section.",
             "Many countries remain highly concentrated across decades, supporting the extension beyond 2001.",
         ),
-        "top_share_note": evidence_note(
-            "Are high Ginis economically meaningful in share terms?",
-            "Compare median top-item and top-five shares by product versus partner.",
-            "The largest products or partners account for substantial shares of trade, not just high index values.",
-            "Top partners and products account for large trade shares, so the Gini is not just an abstract index.",
-        ),
-        "top_frequency_note": evidence_note(
-            "Which products or partners repeatedly appear in countries' top-five baskets?",
-            "Higher country counts mean the item is commonly important across reporters in the latest year.",
-            "A small set of products or partners appears repeatedly across many countries.",
-            "Repeated appearances point to common concentration sources like major destinations, energy, gold, vehicles, medicines, and electronics.",
-        ),
-        "loo_note": evidence_note(
-            "Which top-five items actually raise Gini the most?",
-            "Positive values mean removing the item lowers Gini, so that item is concentration-raising.",
-            "The same high-share products or partners have positive leave-one-out contributions.",
-            "Large partners and lumpy goods explain part of concentration, but not all of it.",
-        ),
         "lumpy_note": evidence_note(
             "Does concentration disappear after removing oil, gold/precious metals, aircraft, ships, and arms?",
             "Compare baseline Gini with exclusion variants and the trade share removed.",
@@ -1024,42 +1244,6 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             "High-concentration buckets grow meaningfully differently from low-concentration buckets.",
             "This is descriptive only; it is useful for scoping follow-up questions, not a causal claim.",
         ),
-        "top_share_table": table_rows(
-            ex1["top5_latest_medians"],
-            [
-                ("flow", "Flow", "text"),
-                ("dimension", "Dimension", "text"),
-                ("top_1_item_share", "Median top item", "pct"),
-                ("cumulative_top_5_share", "Median top five", "pct"),
-                ("gini", "Median Gini", "dec"),
-                ("active_count", "Active items", "int"),
-            ],
-        ),
-        "top_frequency_table": table_rows(
-            ex1["top5_frequency_latest"],
-            [
-                ("flow", "Flow", "text"),
-                ("dimension", "Dimension", "Dimension"),
-                ("display_label", "Item", "text"),
-                ("reporter_count", "Countries", "int"),
-                ("median_share", "Median share", "pct"),
-                ("weighted_mean_share", "Weighted mean share", "pct"),
-            ],
-        ),
-        "loo_interpretation": f"""
-          <div class="interpretation-grid">
-            <article class="note">
-              <h3>All-reporter average</h3>
-              <p>This is the broader panel comparison because the contribution is averaged across all latest-year reporters, including countries where the item is not in the top five. Positive values mean removing the item lowers Gini, so the item is concentration-raising.</p>
-              <p>The largest partner-side signals are <strong>{all_export_destination["display_label"]}</strong> for export destinations ({dec(all_export_destination["mean_loo_gini_contribution_all_reporters"])}) and <strong>{all_import_supplier["display_label"]}</strong> for import suppliers ({dec(all_import_supplier["mean_loo_gini_contribution_all_reporters"])}). On the product side, <strong>{all_import_product["display_label"]}</strong> is the largest import contributor ({dec(all_import_product["mean_loo_gini_contribution_all_reporters"])}), while <strong>{all_export_product["display_label"]}</strong> leads exported products ({dec(all_export_product["mean_loo_gini_contribution_all_reporters"])}).</p>
-            </article>
-            <article class="note">
-              <h3>Conditional on being top five</h3>
-              <p>This view asks how much the item raises concentration in countries where it actually appears in that country's top five. It is useful for mechanism spotting, but rare items can look large because the average is over fewer reporters.</p>
-              <p>The conditional partner signals remain large for <strong>{conditional_export_destination["display_label"]}</strong> as an export destination ({dec(conditional_export_destination["mean_loo_gini_contribution_top5_reporters"])}) and <strong>{conditional_import_supplier["display_label"]}</strong> as an import supplier ({dec(conditional_import_supplier["mean_loo_gini_contribution_top5_reporters"])}). The product panels reinforce the lumpy-goods story: oil, gold, aircraft, pharmaceuticals, vehicles, and chips repeatedly show positive contributions where they enter top-five baskets.</p>
-            </article>
-          </div>
-        """,
         "lumpy_text": (
             f"The full exclusion lowers the median export Product Gini across HS6 products from {dec(baseline.get('product_gini'))} "
             f"to {dec(full_excl.get('product_gini'))}, while the median removed trade share is "
@@ -1128,6 +1312,43 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             f"Top-supplier share means the share of an importer-product's import value sourced from its largest supplier country."
         ),
         "supplier_scope_year": str(latest_supplier_year),
+        "supplier_hhi_text": (
+            f"This decomposition asks whether Product-Gini concentration across HS6 imports and supplier dominance within each HS6 product combine into supplier-country exposure. Across latest available country-years, the median weighted supplier HHI is {dec(supplier_hhi_summary.get('weighted_supplier_hhi'))}; the top-supplier component accounts for {pct(supplier_hhi_summary.get('top_supplier_component_share'))} of that weighted HHI. The median product-weight amplification is {dec(supplier_hhi_summary.get('product_weight_amplification'))}, so the evidence does not say that high-value products are systematically more supplier-concentrated than ordinary products."
+        ),
+        "supplier_hhi_india_text": (
+            f"For India in {int(supplier_hhi_india.get('year', india_supplier_year))}, weighted supplier HHI is {dec(supplier_hhi_india.get('weighted_supplier_hhi'))}, compared with an equal-product-weight benchmark of {dec(supplier_hhi_india.get('equal_weight_supplier_hhi'))}. Product weighting lowers the HHI by {dec(supplier_hhi_india.get('product_weight_amplification'))}, while the top-supplier component still explains {pct(supplier_hhi_india.get('top_supplier_component_share'))} of the weighted supplier HHI. In plain English: India's large import products are not more supplier-concentrated than the typical HS6 product, but the supplier exposure that remains is mostly a one-dominant-supplier-per-product mechanism."
+        ),
+        "supplier_hhi_definitions": """
+          <div class="note">
+            <p><strong>Product Gini</strong> is unevenness of imports across HS6 products. <strong>Within-product supplier HHI</strong> is concentration across source countries inside one HS6 product. <strong>Weighted supplier HHI</strong> is the import-value-weighted average of those within-product HHIs across all products. <strong>Aggregate partner concentration</strong> is concentration across total supplier countries after summing all products; it is related, but it is not the same object.</p>
+          </div>
+        """,
+        "supplier_hhi_latest_table": table_rows(
+            supplier_hhi.get("latest", []),
+            [
+                ("country", "Country", "text"),
+                ("iso3", "ISO3", "text"),
+                ("year", "Year", "year"),
+                ("product_gini", "Import Product Gini", "dec"),
+                ("weighted_supplier_hhi", "Weighted supplier HHI", "dec"),
+                ("equal_weight_supplier_hhi", "Equal-weight HHI", "dec"),
+                ("product_weight_amplification", "Product-weight amplification", "dec"),
+                ("top_supplier_component_share", "Top-supplier component share", "pct"),
+                ("import_value_share_products_top_supplier_ge_75", "Value share in >=75% top-supplier products", "pct"),
+            ],
+        ),
+        "supplier_hhi_india_top_table": table_rows(
+            supplier_hhi.get("india_top_products", []),
+            [
+                ("cmd_code", "HS6", "text"),
+                ("total_product_imports", "Import value", "money"),
+                ("product_import_share", "Product import share", "pct"),
+                ("source_hhi", "Within-product supplier HHI", "dec"),
+                ("top_supplier_name", "Top supplier", "text"),
+                ("top_supplier_share", "Top-supplier share", "pct"),
+                ("hhi_contribution_share", "Share of India's weighted supplier HHI", "pct"),
+            ],
+        ),
         "io_text": (
             f"Bottom line: Exercise 11 weakens the broad intermediate-processing claim. The import products that raise total Product-Gini concentration across HS6 products are generally less export-linked, including among intermediates. The stronger evidence is supplier-country concentration, not Product-Gini concentration; this leaves room for a narrower China/electronics/machinery-style supplier-exposure story."
         ),
@@ -1186,6 +1407,22 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
                 ("ci_high", "CI high", "dec"),
             ],
         ),
+        "intermediate_equation": f"""
+          <div class="equation-card">
+            <h4>Regression plotted here</h4>
+            <div class="math-line">
+              asinh(export value)<sub>p,c,t</sub> =
+              &beta;<sub>1</sub> LOO_Gini_z<sub>p,c,t</sub>
+              + &beta;<sub>2</sub> Intermediate<sub>p</sub>
+              + &beta;<sub>3</sub> (LOO_Gini_z<sub>p,c,t</sub> &times; Intermediate<sub>p</sub>)
+              + &beta;<sub>4</sub> ImportShare_z<sub>p,c,t</sub>
+              + &alpha;<sub>c,t</sub>
+              + &epsilon;<sub>p,c,t</sub>
+            </div>
+            <p><strong>Unit:</strong> HS6 product <em>p</em> in reporter country <em>c</em> and year <em>t</em>. <strong>Fixed effects:</strong> country-year. <strong>SEs:</strong> clustered by reporter country.</p>
+            <p><strong>How the dots map to the equation:</strong> non-intermediate slope = &beta;<sub>1</sub> ({dec(ex11_non_intermediate_slope.get("coef"))}); intermediate slope = &beta;<sub>1</sub> + &beta;<sub>3</sub> ({dec(ex11_intermediate_slope.get("coef"))}); intermediate minus non-intermediate = &beta;<sub>3</sub> ({dec(ex11_interaction.get("coef"))}).</p>
+          </div>
+        """,
         "commodity_table": table_rows(
             ex11["commodity_comparison"],
             [
@@ -1280,10 +1517,8 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       </article>
     </section>
 
-
-
     <section class="section link-grid">
-      <a href="extension.html"><span>01</span><strong>Extending 2001</strong><small>World map, country lines, top-share facts, exclusions, and null benchmarks.</small></a>
+      <a href="extension.html"><span>01</span><strong>Extending 2001</strong><small>World map, country lines, exclusions, and null benchmarks.</small></a>
       <a href="imports.html"><span>02</span><strong>Imports</strong><small>Energy, intermediates, dominant suppliers, and input-output linkages.</small></a>
       <a href="methods.html"><span>03</span><strong>Methods</strong><small>Data coverage, definitions, and downloadable CSVs.</small></a>
     </section>
@@ -1344,34 +1579,6 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
           <div id="country-lines" class="chart tall"></div>
           <div id="line-detail" class="detail-box">Click a line or map country to see country details.</div>
         </div>
-      </div>
-    </section>
-
-    <section class="section two-col" id="top-share-evidence">
-      <article>
-        <h2>Top-Share Evidence</h2>
-        <p>Ginis are high partly because the top products and partners carry large trade shares. “Top item” is the largest single product or partner in a country’s trade basket; “top five” is the combined share of the five largest products or partners. Partner top shares are higher because countries often trade with a small number of major destinations or sources, while product baskets contain thousands of HS6 items.</p>
-        {context["top_share_note"]}
-        {context["top_share_table"]}
-      </article>
-      <article>
-        <h2>Common Top-Five Items</h2>
-        <p>These are the latest-year products or partners that appear most often in country top-five lists.</p>
-        {context["top_frequency_note"]}
-        {context["top_frequency_table"]}
-      </article>
-    </section>
-
-    <section class="section" id="top-five-loo">
-      <div class="section-heading">
-        <h2>Which Top-Five Items Actually Raise Gini?</h2>
-        <p>The frequency tables show what appears often. The leave-one-out charts ask a different question: if the item is removed from a country's latest-year trade basket, how much does the Gini fall?</p>
-      </div>
-      {context["loo_note"]}
-      {context["loo_interpretation"]}
-      <div class="figure-row full-width">
-        <figure><a class="figure-link" href="assets/figures/ex1_loo_all_reporters.png"><img src="assets/figures/ex1_loo_all_reporters.png" alt="Mean item leave-one-out Gini contribution across all reporters"></a><figcaption>All-reporter average: best for identifying broad, system-wide top-five items that raise concentration across the full latest-year reporter sample.</figcaption></figure>
-        <figure><a class="figure-link" href="assets/figures/ex1_loo_top5_reporters.png"><img src="assets/figures/ex1_loo_top5_reporters.png" alt="Mean item leave-one-out Gini contribution where item is top five"></a><figcaption>Conditional average where the item is actually in a reporter's top five: best for mechanism spotting, but rare items can have large conditional effects.</figcaption></figure>
       </div>
     </section>
 
@@ -1461,6 +1668,33 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       </div>
     </section>
 
+    <section class="section" id="supplier-hhi-decomposition">
+      <div class="section-heading">
+        <h2>How Product Concentration and Supplier Dominance Combine</h2>
+        <p>{context["supplier_hhi_text"]}</p>
+      </div>
+      {context["supplier_hhi_definitions"]}
+      <div class="note">
+        <p><strong>Interpretation rule:</strong> if weighted supplier HHI is above the equal-product-weight benchmark, high-value products are more supplier-concentrated than the typical product. If the top-supplier component share is high, the weighted HHI mostly comes from one dominant source country within products.</p>
+      </div>
+      <h3 class="subsection-title">All countries: latest available year</h3>
+      <div class="figure-row">
+        <figure><a class="figure-link" href="assets/figures/ex4_supplier_hhi_scatter.png"><img src="assets/figures/ex4_supplier_hhi_scatter.png" alt="Latest-year import Product Gini versus weighted supplier HHI"></a><figcaption>Product Gini across HS6 imports compared with weighted within-product supplier HHI.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/ex4_supplier_hhi_decomposition.png"><img src="assets/figures/ex4_supplier_hhi_decomposition.png" alt="Weighted supplier HHI decomposition by country"></a><figcaption>Weighted supplier HHI split into top-supplier and residual supplier components.</figcaption></figure>
+      </div>
+      {context["supplier_hhi_latest_table"]}
+      <h3 class="subsection-title">India deep dive</h3>
+      <p class="note">{context["supplier_hhi_india_text"]}</p>
+      <div class="figure-row">
+        <figure><a class="figure-link" href="assets/figures/ex4_india_supplier_hhi_time.png"><img src="assets/figures/ex4_india_supplier_hhi_time.png" alt="India supplier HHI decomposition over time"></a><figcaption>India: weighted supplier HHI, equal-product-weight benchmark, and product-weight amplification.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/ex4_india_supplier_hhi_bubble.png"><img src="assets/figures/ex4_india_supplier_hhi_bubble.png" alt="India product import share versus supplier HHI bubble chart"></a><figcaption>India latest year: larger products on the x-axis, within-product supplier HHI on the y-axis.</figcaption></figure>
+      </div>
+      <div class="figure-row full-width">
+        <figure><a class="figure-link" href="assets/figures/ex4_india_supplier_hhi_top.png"><img src="assets/figures/ex4_india_supplier_hhi_top.png" alt="India top product contributions to weighted supplier HHI"></a><figcaption>India latest year: HS6 products with the largest contribution to weighted supplier HHI.</figcaption></figure>
+      </div>
+      {context["supplier_hhi_india_top_table"]}
+    </section>
+
     <section class="section" id="io-linkage">
       <div class="section-heading">
         <h2>Exercise 11: What the Import-Linkage Test Says</h2>
@@ -1468,7 +1702,7 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       </div>
       {context["ex11_result_ladder"]}
       <div id="io-chart" class="chart"></div>
-      <p class="note">The IO chart remains useful descriptive context: top export sectors often have concentrated imported-input baskets. But the HS6 product-level linkage test below shows that the specific import products driving aggregate Product-Gini concentration are generally not the export-linked products.</p>
+      <p class="note">The IO chart is background: some top export sectors rely on concentrated imported inputs. The product-level test below is the main result: the import products that make overall import Product Gini high are usually not the products most tied to exports.</p>
     </section>
 
     <section class="section" id="ex11-regressions">
@@ -1479,16 +1713,27 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       {context["ex11_detail_blocks"]}
       {context["coefs_table"]}
       <h3 class="subsection-title">Intermediate slopes</h3>
+      {context["intermediate_equation"]}
       {context["intermediate_effects_table"]}
+      <div class="figure-row full-width">
+        <figure><a class="figure-link" href="assets/figures/ex11_coefficients.png"><img src="assets/figures/ex11_coefficients.png" alt="Intermediate channel coefficients"></a><figcaption>Intermediate-channel regression coefficients. The point estimates correspond to the slope mapping in the equation above.</figcaption></figure>
+      </div>
       <h3 class="subsection-title">Commodity-exclusion robustness</h3>
       {context["commodity_table"]}
-      <div class="figure-row">
+      <div class="figure-row full-width">
         <figure><a class="figure-link" href="assets/figures/ex11_export_linkage_decile.png"><img src="assets/figures/ex11_export_linkage_decile.png" alt="Export linkage by Product-Gini leave-one-out decile"></a><figcaption>HS6 export linkage by Product-Gini contribution decile.</figcaption></figure>
-        <figure><a class="figure-link" href="assets/figures/ex11_hs2_linkage_decile.png"><img src="assets/figures/ex11_hs2_linkage_decile.png" alt="HS2 export linkage by leave-one-out decile"></a><figcaption>HS2 robustness: export linkage by aggregated concentration-contribution decile.</figcaption></figure>
+      </div>
+      <h3 class="subsection-title">HS2 interactive robustness</h3>
+      <p class="note">HS2 means the two-digit Harmonized System chapter: a broad product sector such as HS27 mineral fuels, HS84 machinery, or HS85 electrical machinery. In the decile view, each dot is a bin of country-year-HS2 observations, matching the static figure logic. In the chapter view, each dot is one named HS2 chapter averaged across the panel.</p>
+      <div class="controls compact">
+        <label>Dot meaning <select id="hs2-linkage-view"><option value="decile">Decile averages</option><option value="chapter">HS2 chapters</option></select></label>
+      </div>
+      <div class="chart-grid">
+        <div id="hs2-probability-chart" class="chart"></div>
+        <div id="hs2-value-chart" class="chart"></div>
       </div>
       <div class="figure-row">
         <figure><a class="figure-link" href="assets/figures/ex11_india_io.png"><img src="assets/figures/ex11_india_io.png" alt="India top export input exposure over time"></a><figcaption>India top-export-sector imported-input exposure.</figcaption></figure>
-        <figure><a class="figure-link" href="assets/figures/ex11_coefficients.png"><img src="assets/figures/ex11_coefficients.png" alt="Intermediate channel coefficients"></a><figcaption>Intermediate-channel regression coefficients.</figcaption></figure>
         <figure><a class="figure-link" href="assets/figures/ex11_india_supplier_scatter.png"><img src="assets/figures/ex11_india_supplier_scatter.png" alt="India supplier concentration linkage scatter"></a><figcaption>India supplier concentration and export linkage scatter.</figcaption></figure>
       </div>
     </section>
@@ -1517,6 +1762,8 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
           <li><strong>Product Gini:</strong> concentration across HS6 product totals within a country-year-flow.</li>
           <li><strong>Partner Gini:</strong> concentration across destination or source partner totals within a country-year-flow.</li>
           <li><strong>Product-partner cell Gini:</strong> concentration across HS6 product-by-partner cells within a country-year-flow; this is the product-partner/partner-product measure.</li>
+          <li><strong>Within-product supplier HHI:</strong> concentration across supplier countries inside one importer-year-HS6 product.</li>
+          <li><strong>Weighted supplier HHI:</strong> import-value-weighted average of within-product supplier HHI across all HS6 products in an importer-year.</li>
           <li><strong>Lumpy-product exclusions:</strong> HS27 oil/mineral fuels, HS71 precious stones/metals, HS88 aircraft, HS89 ships, and HS93 arms.</li>
           <li><strong>HS2-preserving benchmark:</strong> randomizes within broad HS2 sectors while preserving HS2 totals and active HS6 counts; it is a conditional benchmark, not complete randomization.</li>
         </ul>
@@ -1666,7 +1913,7 @@ main { max-width: 1160px; margin: 0 auto; padding: 24px 22px 56px; }
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 14px;
 }
-.stat-card, .note, .selector-panel, .link-grid a, .hypothesis-card {
+.stat-card, .note, .equation-card, .selector-panel, .link-grid a, .hypothesis-card {
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1681,6 +1928,33 @@ main { max-width: 1160px; margin: 0 auto; padding: 24px 22px 56px; }
   gap: 28px;
 }
 .note { padding: 18px; }
+.equation-card {
+  padding: 16px 18px;
+  margin: 10px 0 16px;
+}
+.equation-card h4 {
+  margin: 0 0 10px;
+  color: var(--accent-dark);
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.math-line {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f8fafc;
+  color: var(--ink);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+}
+.equation-card p {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 14px;
+}
 .link-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -1916,6 +2190,12 @@ button:hover { border-color: var(--accent); }
   margin: 14px 0;
 }
 .chart.tall { min-height: 560px; }
+.chart-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 12px 0 18px;
+}
 .tool-grid {
   display: grid;
   grid-template-columns: 270px minmax(0, 1fr);
@@ -2021,7 +2301,7 @@ figcaption {
 @media (max-width: 860px) {
   .header-inner, .tool-header, .section-heading { display: block; }
   nav { justify-content: flex-start; margin-top: 12px; }
-  .stat-grid, .two-col, .link-grid, .hypothesis-grid, .result-ladder, .interpretation-grid, .next-step-grid, .tool-grid, .figure-row, .download-grid {
+  .stat-grid, .two-col, .link-grid, .hypothesis-grid, .result-ladder, .interpretation-grid, .next-step-grid, .tool-grid, .figure-row, .chart-grid, .download-grid {
     grid-template-columns: 1fr;
   }
   .hero h1, .page-title h1 { font-size: 32px; }
@@ -2062,14 +2342,14 @@ def site_js() -> str:
     document.querySelectorAll('.js-plotly-plot').forEach((node) => Plotly.Plots.resize(node));
   }
 
-  function layout(title, ytitle) {
+  function layout(title, ytitle, xtitle) {
     return {
       title: { text: title, x: 0, xanchor: 'left', font: { size: 18 } },
       margin: { l: 56, r: 24, t: 52, b: 48 },
       paper_bgcolor: 'rgba(0,0,0,0)',
       plot_bgcolor: '#ffffff',
       hovermode: 'closest',
-      xaxis: { gridcolor: '#e5e7eb', zeroline: false },
+      xaxis: { title: xtitle || '', gridcolor: '#e5e7eb', zeroline: false },
       yaxis: { title: ytitle || '', gridcolor: '#e5e7eb', zeroline: false },
       legend: { orientation: 'h', y: -0.2 }
     };
@@ -2312,6 +2592,8 @@ def site_js() -> str:
     renderImportBins();
     renderSupplierChart();
     renderIoChart();
+    renderHs2LinkageCharts();
+    byId('hs2-linkage-view')?.addEventListener('change', renderHs2LinkageCharts);
   }
 
   function renderImportBins() {
@@ -2373,6 +2655,118 @@ def site_js() -> str:
       hovertemplate: name + '<br>%{x}: %{y:.3f}<extra></extra>'
     }));
     Plotly.react(node, traces, layout('Top export sector imported-input exposure', 'Share or Gini'), config);
+  }
+
+  function hs2RowsForCurrentView() {
+    const view = byId('hs2-linkage-view')?.value || 'decile';
+    const linkage = DATA.exercise11?.hs2_linkage || {};
+    return {
+      view,
+      rows: view === 'chapter' ? (linkage.chapters || []) : (linkage.deciles || [])
+    };
+  }
+
+  function hs2MarkerSizes(rows) {
+    return rows.map((row) => {
+      const share = Math.max(0, Number(row.mean_import_share) || 0);
+      return 8 + Math.sqrt(share) * 90;
+    });
+  }
+
+  function renderHs2LinkageChart(nodeId, outcomeKey, title, ytitle, color) {
+    const node = byId(nodeId);
+    if (!node) return;
+    const { view, rows } = hs2RowsForCurrentView();
+    const xTitle = 'Mean summed HS6 LOO Gini contribution';
+    let trace;
+    if (view === 'chapter') {
+      trace = {
+        type: 'scatter',
+        mode: 'markers',
+        name: 'HS2 chapters',
+        x: rows.map((r) => r.mean_loo_gini),
+        y: rows.map((r) => r[outcomeKey]),
+        text: rows.map((r) => r.display_label),
+        customdata: rows.map((r) => [
+          r.mean_import_share,
+          r.mean_intermediate_import_share,
+          r.mean_export_share,
+          r.observations,
+          r.mean_export_value
+        ]),
+        marker: {
+          size: hs2MarkerSizes(rows),
+          color: rows.map((r) => r.mean_intermediate_import_share),
+          colorscale: 'Viridis',
+          colorbar: { title: 'Intermediate<br>import share' },
+          opacity: 0.82,
+          line: { color: '#ffffff', width: 0.7 }
+        },
+        hovertemplate:
+          '<b>%{text}</b><br>' +
+          xTitle + ': %{x:.4f}<br>' +
+          ytitle + ': %{y:.3f}<br>' +
+          'Mean import share: %{customdata[0]:.2%}<br>' +
+          'Intermediate import share: %{customdata[1]:.1%}<br>' +
+          'Mean export share: %{customdata[2]:.2%}<br>' +
+          'Mean export value: $%{customdata[4]:,.0f}<br>' +
+          'Panel rows: %{customdata[3]}<extra></extra>'
+      };
+    } else {
+      trace = {
+        type: 'scatter',
+        mode: 'lines+markers',
+        name: 'Decile averages',
+        x: rows.map((r) => r.mean_loo_gini),
+        y: rows.map((r) => r[outcomeKey]),
+        text: rows.map((r) => 'Decile ' + r.decile),
+        customdata: rows.map((r) => [
+          r.observations,
+          r.chapter_count,
+          r.min_loo_gini,
+          r.max_loo_gini,
+          r.top_chapters,
+          r.mean_import_share,
+          r.mean_intermediate_import_share,
+          r.mean_export_value
+        ]),
+        line: { color, width: 2 },
+        marker: { size: 8, color },
+        hovertemplate:
+          '<b>%{text}</b><br>' +
+          xTitle + ': %{x:.4f}<br>' +
+          ytitle + ': %{y:.3f}<br>' +
+          'LOO range: %{customdata[2]:.4f} to %{customdata[3]:.4f}<br>' +
+          'Rows: %{customdata[0]} | HS2 chapters: %{customdata[1]}<br>' +
+          'Mean import share: %{customdata[5]:.2%}<br>' +
+          'Intermediate import share: %{customdata[6]:.1%}<br>' +
+          'Mean export value: $%{customdata[7]:,.0f}<br>' +
+          'Largest import-share chapters:<br>%{customdata[4]}<extra></extra>'
+      };
+    }
+    const chartLayout = layout(title, ytitle, xTitle);
+    chartLayout.margin = { l: 64, r: view === 'chapter' ? 84 : 24, t: 52, b: 64 };
+    chartLayout.showlegend = false;
+    chartLayout.xaxis.zeroline = true;
+    chartLayout.xaxis.zerolinecolor = '#94a3b8';
+    Plotly.react(node, [trace], chartLayout, config);
+  }
+
+  function renderHs2LinkageCharts() {
+    renderHs2LinkageChart(
+      'hs2-probability-chart',
+      'export_probability',
+      'HS2 export probability',
+      'Probability HS2 chapter is exported',
+      '#2f5d62'
+    );
+    renderHs2LinkageChart(
+      'hs2-value-chart',
+      'mean_asinh_export_value',
+      'HS2 export value',
+      'Mean transformed HS2 export value',
+      '#8c4f2b'
+    );
   }
 
   document.addEventListener('DOMContentLoaded', () => {
