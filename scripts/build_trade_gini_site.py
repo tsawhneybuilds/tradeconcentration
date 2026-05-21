@@ -814,7 +814,7 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
         [
             hypothesis_card(
                 "Framing question",
-                "Is the 2001 concentration fact worth extending?",
+                "Extending the 2001 concentration",
                 "Does the Panagariya-Bagaria concentration pattern persist when the same broad country set is followed across many years rather than one central cross-section?",
                 "Product, partner, and product-partner-cell Ginis stay high across countries and years.",
                 "The high concentration pattern disappears, flips, or depends mainly on one year/sample.",
@@ -1249,7 +1249,6 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
     <section class="section" id="headline-findings">
       <div class="section-heading">
         <h2>Headline Findings</h2>
-        <p>The original paper used 2001 as the central cross-section and noted that broader time and country extensions were beyond scope. This site turns that opening into a compact empirical follow-up.</p>
       </div>
       {context["overview_cards"]}
     </section>
