@@ -1318,8 +1318,8 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
           </div>
         </div>
       </div>
-      <div id="world-map" class="chart tall"></div>
       {context["map_note"]}
+      <div id="world-map" class="chart tall"></div>
       <div class="tool-grid">
         <aside class="selector-panel">
           <div class="selector-actions">
@@ -1334,9 +1334,9 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
             <label>Line flow <select id="line-flow"><option>Exports</option><option>Imports</option></select></label>
             <label>Line metric <select id="line-metric"><option value="product_gini">Product Gini</option><option value="partner_gini">Partner Gini</option><option value="product_partner_cell_gini">Product-partner cell Gini</option></select></label>
           </div>
+          {context["line_note"]}
           <div id="country-lines" class="chart tall"></div>
           <div id="line-detail" class="detail-box">Click a line or map country to see country details.</div>
-          {context["line_note"]}
         </div>
       </div>
     </section>
@@ -1345,14 +1345,14 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       <article>
         <h2>Top-Share Evidence</h2>
         <p>Ginis are high partly because the top products and partners carry large trade shares. “Top item” is the largest single product or partner in a country’s trade basket; “top five” is the combined share of the five largest products or partners. Partner top shares are higher because countries often trade with a small number of major destinations or sources, while product baskets contain thousands of HS6 items.</p>
-        {context["top_share_table"]}
         {context["top_share_note"]}
+        {context["top_share_table"]}
       </article>
       <article>
         <h2>Common Top-Five Items</h2>
         <p>These are the latest-year products or partners that appear most often in country top-five lists.</p>
-        {context["top_frequency_table"]}
         {context["top_frequency_note"]}
+        {context["top_frequency_table"]}
       </article>
     </section>
 
@@ -1361,12 +1361,12 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
         <h2>Which Top-Five Items Actually Raise Gini?</h2>
         <p>The frequency tables show what appears often. The leave-one-out charts ask a different question: if the item is removed from a country's latest-year trade basket, how much does the Gini fall?</p>
       </div>
+      {context["loo_note"]}
       {context["loo_interpretation"]}
       <div class="figure-row full-width">
         <figure><a class="figure-link" href="assets/figures/ex1_loo_all_reporters.png"><img src="assets/figures/ex1_loo_all_reporters.png" alt="Mean item leave-one-out Gini contribution across all reporters"></a><figcaption>All-reporter average: best for identifying broad, system-wide top-five items that raise concentration across the full latest-year reporter sample.</figcaption></figure>
         <figure><a class="figure-link" href="assets/figures/ex1_loo_top5_reporters.png"><img src="assets/figures/ex1_loo_top5_reporters.png" alt="Mean item leave-one-out Gini contribution where item is top five"></a><figcaption>Conditional average where the item is actually in a reporter's top five: best for mechanism spotting, but rare items can have large conditional effects.</figcaption></figure>
       </div>
-      {context["loo_note"]}
     </section>
 
     <section class="section" id="lumpy-exclusions">
@@ -1374,8 +1374,8 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
         <h2>Lumpy-Product Exclusions</h2>
         <p>{context["lumpy_text"]}</p>
       </div>
-      <div id="exclusion-chart" class="chart"></div>
       {context["lumpy_note"]}
+      <div id="exclusion-chart" class="chart"></div>
       {context["exclusion_table"]}
       <div class="figure-row">
         <figure><a class="figure-link" href="assets/figures/ex6_before_after.png"><img src="assets/figures/ex6_before_after.png" alt="Before and after export product Gini over time"></a><figcaption>Export product Gini before and after full lumpy-product exclusion.</figcaption></figure>
@@ -1388,8 +1388,8 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
         <h2>Benchmark Ladder</h2>
         <p>Exercise 10 is best read as a ladder of benchmarks. The active-count-only null is a loose benchmark. The HS2-preserving null is more conservative because it keeps broad HS2 sector totals intact, so it is explicitly not complete randomization.</p>
       </div>
-      <div id="benchmark-chart" class="chart"></div>
       {context["benchmark_note"]}
+      <div id="benchmark-chart" class="chart"></div>
       {context["benchmark_table"]}
       <div class="figure-row">
         <figure><a class="figure-link" href="assets/figures/ex10_actual_vs_benchmark.png"><img src="assets/figures/ex10_actual_vs_benchmark.png" alt="Actual versus HS2-preserved benchmark Gini"></a><figcaption>Actual product Ginis remain above the HS2-preserved random benchmark.</figcaption></figure>
@@ -1402,8 +1402,8 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
         <h2>Descriptive Growth Buckets</h2>
         <p>This local Exercise 2 output is included as context only: it buckets export concentration states and reports subsequent growth. It should not be read as causal evidence.</p>
       </div>
-      {context["growth_table"]}
       {context["growth_note"]}
+      {context["growth_table"]}
     </section>
     """
 
