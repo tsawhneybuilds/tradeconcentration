@@ -1,44 +1,51 @@
-# Exercise 10: HS2-Preserving Product Random Benchmark
+# Exercise 10: Random Benchmark / Null Model
 
-Generated: 2026-05-18T11:10:34+00:00
+Generated: 2026-05-22T08:51:33+00:00
 
 This memo is intentionally descriptive. `exercises.md` should only be updated after discussion.
 
-## Benchmark Design
-
-- Uses real UN Comtrade HS6 annual product-partner data.
-- Aggregates to HS6 product totals within each country-year-flow.
-- Preserves each country-year-flow total trade value.
-- Preserves each HS2 sector total within each country-year-flow.
-- Preserves the active HS6 product count inside each HS2 sector.
-- Randomizes HS6 product shares only within HS2 sectors.
-- Uses 1,000 simulations per country-year-flow with fixed seed `20260518`.
-
-## Median Actual Versus HS2-Preserved Benchmark
+## Median Actual Versus Benchmark Measures
 
 ```text
-         actual_gini  sim_gini_median  actual_minus_sim_median_gini  actual_gini_percentile
-flow                                                                                       
-Exports        0.910            0.750                         0.148                     1.0
-Imports        0.859            0.715                         0.142                     1.0
-```
-
-## Latest Available Year (2025)
-
-```text
-         actual_gini  sim_gini_median  actual_minus_sim_median_gini  actual_gini_percentile
-flow                                                                                       
-Exports         0.93            0.783                         0.138                     1.0
-Imports         0.88            0.726                         0.150                     1.0
+                              actual_gini  sim_gini_median  actual_minus_sim_median_gini  actual_gini_percentile
+dimension            flow
+partner              Exports        0.897            0.498                         0.399                     1.0
+                     Imports        0.901            0.497                         0.403                     1.0
+product              Exports        0.907            0.500                         0.407                     1.0
+                     Imports        0.854            0.500                         0.354                     1.0
+product_partner_cell Exports        0.949            0.500                         0.449                     1.0
+                     Imports        0.940            0.500                         0.440                     1.0
 ```
 
 ## Share Of Country-Year-Flow Observations Above 95th Benchmark Percentile
 
 ```text
-flow
-Exports    1.0
-Imports    1.0
+dimension             flow
+partner               Exports    1.0
+                      Imports    1.0
+product               Exports    1.0
+                      Imports    1.0
+product_partner_cell  Exports    1.0
+                      Imports    1.0
 ```
+
+## Share Using Approximate Active-Count Simulation
+
+```text
+dimension
+partner                 0.000
+product                 0.994
+product_partner_cell    1.000
+```
+
+## Benchmark Design
+
+- Runs separately for products, partners, and product-partner cells.
+- Preserves each country-year-flow total trade value.
+- Preserves each country-year-flow active item count within the benchmarked dimension.
+- Uses a symmetric Dirichlet random-allocation null, implemented as exponential random weights normalized to the observed total.
+- Does not use naive relabeling, because relabeling preserves the same Gini by construction.
+- Large active-count groups can reuse a nearby/capped simulation count with analytic centering for Gini and top-share expectations; see `results/exercise_10_tables/benchmark_validation.json`.
 
 ## Files
 
@@ -46,7 +53,6 @@ Imports    1.0
 - Figures: `results/exercise_10_figures/`
 - Processed data: `data/processed/random_benchmark_all_years.parquet`
 
-## Note
+## Discussion Prompt
 
-The earlier active-count-only benchmark has been backed up as `random_benchmark_active_count_null_all_years.*`.
-The HS2-preserving benchmark is the main Exercise 10 result because it matches the planned non-naive null model.
+Is actual concentration still unusually high after preserving scale and sparsity, or is much of it explained by random allocation over a sparse set of active products, partners, and cells?

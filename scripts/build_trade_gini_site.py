@@ -35,6 +35,8 @@ SOURCE_FILES = {
     "exercise_4_suppliers": ROOT / "results/exercise_04_tables/dominant_supplier_importer_summary.csv",
     "exercise_4_partner_counterfactual_country_year": ROOT / "results/exercise_04_tables/partner_gini_counterfactual_country_year.csv",
     "exercise_4_partner_counterfactual_latest": ROOT / "results/exercise_04_tables/partner_gini_counterfactual_latest.csv",
+    "h24_supplier_summary": ROOT / "results/h24_supplier_specialization_tables/yearly_concentration_summary.csv",
+    "h24_supplier_comparison": ROOT / "results/h24_supplier_specialization_tables/importer_vs_world_supplier_dominance_comparison.csv",
     "exercise_6_exclusions": ROOT / "results/exercise_06_tables/concentration_exclusions_all_years.csv",
     "exercise_10_hs2": ROOT / "results/exercise_10_tables/random_benchmark_hs2_product_all_years.csv",
     "exercise_10_active": ROOT / "results/exercise_10_tables/random_benchmark_active_count_null_all_years.csv",
@@ -43,6 +45,8 @@ SOURCE_FILES = {
     "exercise_11_intermediate_effects": ROOT / "results/exercise_11_product_export_linkage_tables/intermediate_effects.csv",
     "exercise_11_hs2_panel": ROOT / "results/exercise_11_product_export_linkage_tables/hs2_export_linkage_panel.csv",
     "exercise_11_hs2_regressions": ROOT / "results/exercise_11_product_export_linkage_tables/hs2_regressions.csv",
+    "exercise_11_hs6_4pct_bins": ROOT / "results/exercise_11_product_export_linkage_tables/ex11_export_linkage_by_loo_4pct_bin.csv",
+    "exercise_11_hs2_4pct_bins": ROOT / "results/exercise_11_product_export_linkage_tables/ex11_hs2_export_linkage_by_loo_4pct_bin.csv",
     "exercise_11_commodity_comparison": ROOT / "results/exercise_11_product_export_linkage_tables/commodity_exclusion_regression_comparison.csv",
     "exercise_11_commodity_stats": ROOT / "results/exercise_11_product_export_linkage_tables/commodity_outlier_exclusion_stats.csv",
 }
@@ -52,6 +56,7 @@ FIGURES = {
     "ex3_leave_one_out": ROOT / "results/exercise_03_figures/latest_year_gini_reduction_when_bin_excluded.png",
     "ex4_supplier_time": ROOT / "results/exercise_04_figures/dominant_supplier_summary_over_time.png",
     "ex4_supplier_distribution": ROOT / "results/exercise_04_figures/latest_year_top_supplier_share_distribution.png",
+    "h24_importer_world_supplier_comparison": ROOT / "results/h24_supplier_specialization_figures/importer_country_vs_world_supplier_dominance.png",
     "ex4_partner_counterfactual_latest": ROOT / "results/exercise_04_figures/partner_gini_counterfactual_latest.png",
     "ex4_india_partner_counterfactual": ROOT / "results/exercise_04_figures/india_partner_gini_counterfactual_timeseries.png",
     "ex6_before_after": ROOT / "results/exercise_06_figures/before_after_product_gini_over_time.png",
@@ -61,6 +66,8 @@ FIGURES = {
     "ex11_india_io": ROOT / "results/exercise_11_figures/india_top_export_input_exposure_over_time.png",
     "ex11_export_linkage_decile": ROOT / "results/exercise_11_product_export_linkage_figures/ex11_export_linkage_by_loo_decile.png",
     "ex11_hs2_linkage_decile": ROOT / "results/exercise_11_product_export_linkage_figures/ex11_hs2_export_linkage_by_loo_decile.png",
+    "ex11_export_linkage_4pct": ROOT / "results/exercise_11_product_export_linkage_figures/ex11_export_linkage_by_loo_4pct_bin.png",
+    "ex11_hs2_linkage_4pct": ROOT / "results/exercise_11_product_export_linkage_figures/ex11_hs2_export_linkage_by_loo_4pct_bin.png",
     "ex11_coefficients": ROOT / "results/exercise_11_product_export_linkage_figures/ex11_intermediate_channel_coefficients.png",
     "ex11_india_supplier_scatter": ROOT / "results/exercise_11_product_export_linkage_figures/ex11_india_product_supplier_loo_scatter.png",
 }
@@ -71,12 +78,16 @@ DOWNLOADS = {
     "exercise_04_dominant_supplier_importer_summary.csv": SOURCE_FILES["exercise_4_suppliers"],
     "exercise_04_partner_gini_counterfactual_country_year.csv": SOURCE_FILES["exercise_4_partner_counterfactual_country_year"],
     "exercise_04_partner_gini_counterfactual_latest.csv": SOURCE_FILES["exercise_4_partner_counterfactual_latest"],
+    "h24_supplier_specialization_yearly_summary.csv": SOURCE_FILES["h24_supplier_summary"],
+    "h24_importer_vs_world_supplier_dominance_comparison.csv": SOURCE_FILES["h24_supplier_comparison"],
     "exercise_06_concentration_exclusions_all_years.csv": SOURCE_FILES["exercise_6_exclusions"],
     "exercise_10_hs2_product_benchmark_all_years.csv": SOURCE_FILES["exercise_10_hs2"],
     "exercise_11_country_year_input_output_linkage_summary.csv": SOURCE_FILES["exercise_11_io_summary"],
     "exercise_11_selected_regression_coefficients.csv": SOURCE_FILES["exercise_11_coefficients"],
     "exercise_11_intermediate_effects.csv": SOURCE_FILES["exercise_11_intermediate_effects"],
     "exercise_11_hs2_regressions.csv": SOURCE_FILES["exercise_11_hs2_regressions"],
+    "exercise_11_export_linkage_by_loo_4pct_bin.csv": SOURCE_FILES["exercise_11_hs6_4pct_bins"],
+    "exercise_11_hs2_export_linkage_by_loo_4pct_bin.csv": SOURCE_FILES["exercise_11_hs2_4pct_bins"],
     "exercise_11_commodity_exclusion_regression_comparison.csv": SOURCE_FILES["exercise_11_commodity_comparison"],
     "exercise_11_commodity_outlier_exclusion_stats.csv": SOURCE_FILES["exercise_11_commodity_stats"],
 }
@@ -494,10 +505,10 @@ def validate_source_shapes(ex1: pd.DataFrame) -> dict[str, Any]:
     countries = sorted(ex1["country"].dropna().unique())
     year_min = int(ex1["year"].min())
     year_max = int(ex1["year"].max())
-    if len(countries) != 33:
-        raise RuntimeError(f"Expected 33 countries in Exercise 1 panel, found {len(countries)}.")
-    if (year_min, year_max) != (1988, 2025):
-        raise RuntimeError(f"Expected Exercise 1 year range 1988-2025, found {year_min}-{year_max}.")
+    if not countries:
+        raise RuntimeError("Exercise 1 panel has no countries.")
+    if year_min > year_max:
+        raise RuntimeError(f"Invalid Exercise 1 year range {year_min}-{year_max}.")
     return {"countries": len(countries), "year_min": year_min, "year_max": year_max}
 
 
@@ -541,6 +552,8 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
     decomp = read_csv("exercise_3_decomposition")
     total_import = read_csv("exercise_3_total")
     suppliers = read_csv("exercise_4_suppliers")
+    h24_supplier_summary = read_csv("h24_supplier_summary")
+    h24_supplier_comparison = read_csv("h24_supplier_comparison")
     partner_counterfactual = read_csv("exercise_4_partner_counterfactual_country_year")
     partner_counterfactual_latest = read_csv("exercise_4_partner_counterfactual_latest")
     exclusions = read_csv("exercise_6_exclusions")
@@ -725,6 +738,20 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
         .median(numeric_only=True)
         .reset_index()
     )
+    h24_supplier_years = h24_supplier_summary[
+        [
+            "year",
+            "median_top_supplier_share",
+            "share_products_top_supplier_ge_75",
+            "import_value_share_top_supplier_ge_75",
+            "share_products_dominant_specialized",
+            "import_value_share_dominant_specialized",
+        ]
+    ].copy()
+    for column in h24_supplier_years.columns:
+        h24_supplier_years[column] = pd.to_numeric(h24_supplier_years[column], errors="coerce")
+    h24_supplier_years = h24_supplier_years.sort_values("year").reset_index(drop=True)
+    h24_latest_year = int(h24_supplier_years["year"].max()) if not h24_supplier_years.empty else None
     latest_supplier_year = int(suppliers["year"].max()) if not suppliers.empty else None
     latest_supplier_reporter_count = (
         int(suppliers.loc[suppliers["year"].eq(latest_supplier_year), "iso3"].nunique()) if latest_supplier_year else None
@@ -936,6 +963,11 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
                 ),
             },
         },
+        "h24Supplier": {
+            "year_series": clean_records(h24_supplier_years, list(h24_supplier_years.columns)),
+            "comparison": clean_records(h24_supplier_comparison, list(h24_supplier_comparison.columns)),
+            "latest_year": h24_latest_year,
+        },
         "exercise6": {
             "median_by_variant": clean_records(exclusion_medians, list(exclusion_medians.columns)),
             "year_series": clean_records(exclusion_years, list(exclusion_years.columns)),
@@ -990,16 +1022,22 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
     ex1 = data["exercise1"]
     ex3 = data["exercise3"]
     ex4 = data["exercise4"]
+    h24 = data["h24Supplier"]
     ex6 = data["exercise6"]
     ex10 = data["exercise10"]
     ex11 = data["exercise11"]
 
     exp = find_value(ex1["median_by_flow"], flow="Exports")
     imp = find_value(ex1["median_by_flow"], flow="Imports")
-    exp_1988 = find_value(ex1["selected_year_medians"], flow="Exports", year=1988)
-    exp_2025 = find_value(ex1["selected_year_medians"], flow="Exports", year=2025)
-    imp_1988 = find_value(ex1["selected_year_medians"], flow="Imports", year=1988)
-    imp_2025 = find_value(ex1["selected_year_medians"], flow="Imports", year=2025)
+    shape = data["metadata"]["data_checks"]["exercise_1"]
+    sample_country_count = int(shape["countries"])
+    sample_year_min = int(shape["year_min"])
+    sample_year_max = int(shape["year_max"])
+    sample_panel_label = f"{sample_country_count}-country {sample_year_min}-{sample_year_max} panel"
+    exp_start = find_value(ex1["selected_year_medians"], flow="Exports", year=sample_year_min)
+    exp_end = find_value(ex1["selected_year_medians"], flow="Exports", year=sample_year_max)
+    imp_start = find_value(ex1["selected_year_medians"], flow="Imports", year=sample_year_min)
+    imp_end = find_value(ex1["selected_year_medians"], flow="Imports", year=sample_year_max)
     baseline = find_value(ex6["median_by_variant"], variant="baseline")
     full_excl = find_value(ex6["median_by_variant"], variant="full_exclusion")
     energy = find_value(ex3["bin_summary"], import_bin="energy")
@@ -1010,6 +1048,8 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
     partner_counterfactual_india = partner_counterfactual.get("india_latest", {})
     latest_supplier_year = int(ex4.get("latest_year")) if ex4.get("latest_year") else 2025
     latest_supplier_reporter_count = int(ex4.get("latest_reporter_count")) if ex4.get("latest_reporter_count") else 0
+    h24_latest_year = int(h24.get("latest_year")) if h24.get("latest_year") else 2024
+    h24_latest = find_value(h24.get("year_series", []), year=h24_latest_year)
     india_supplier_year = int(ex4.get("india_latest_year")) if ex4.get("india_latest_year") else int(india_supplier.get("year", 2024))
     india_counterfactual_year = int(partner_counterfactual_india.get("year") or india_supplier_year)
     india_io = ex11["india_latest"]
@@ -1036,7 +1076,7 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
 
     overview_cards = f"""
       <div class="stat-grid">
-        <article class="stat-card"><span>Median export Product Gini</span><strong>{dec(exp.get("product_gini"))}</strong><small>across HS6 products, 1988-2025</small></article>
+        <article class="stat-card"><span>Median export Product Gini</span><strong>{dec(exp.get("product_gini"))}</strong><small>across HS6 products, {sample_year_min}-{sample_year_max}</small></article>
         <article class="stat-card"><span>Median import Product Gini</span><strong>{dec(imp.get("product_gini"))}</strong><small>across HS6 products, same panel</small></article>
         <article class="stat-card"><span>Full lumpy exclusion</span><strong>{dec(full_excl.get("product_gini"))}</strong><small>export Product Gini, from {dec(baseline.get("product_gini"))}</small></article>
         <article class="stat-card"><span>Energy import-bin Product Gini</span><strong>{dec(energy.get("product_gini"))}</strong><small>within HS6 energy products; top-1 share {pct(energy.get("top_1_product_share"))}</small></article>
@@ -1048,10 +1088,10 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             hypothesis_card(
                 "Framing question",
                 "Extending the 2001 concentration",
-                "Does the Panagariya-Bagaria concentration pattern persist when the same broad country set is followed across many years rather than one central cross-section?",
+                "Does the concentration pattern persist when the selected country sample is followed across many years rather than one central cross-section?",
                 "Product Gini, Partner Gini, and Product-partner cell Gini stay high across countries and years.",
                 "The high concentration pattern disappears, flips, or depends mainly on one year/sample.",
-                f"Supports. In the 33-country 1988-2025 panel, median Product Ginis across HS6 products are {dec(exp.get('product_gini'))} for exports and {dec(imp.get('product_gini'))} for imports, and median Product-partner cell Ginis across HS6-by-partner cells are {dec(exp.get('product_partner_cell_gini'))} and {dec(imp.get('product_partner_cell_gini'))}.",
+                f"Supports. In the {sample_panel_label}, median Product Ginis across HS6 products are {dec(exp.get('product_gini'))} for exports and {dec(imp.get('product_gini'))} for imports, and median Product-partner cell Ginis across HS6-by-partner cells are {dec(exp.get('product_partner_cell_gini'))} and {dec(imp.get('product_partner_cell_gini'))}.",
                 [
                     ("Extension page", "extension.html#map-lines"),
                     ("Import mechanisms", "imports.html#import-bins"),
@@ -1069,7 +1109,7 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
                 "Concentration is a persistent aggregate fact, not a one-year artifact.",
                 "Product Gini and Partner Gini stay high across countries and years.",
                 "Concentration disappears or changes sharply by year/sample.",
-                f"Supports. Median export Product Gini across HS6 products rises from {dec(exp_1988.get('product_gini'))} in 1988 to {dec(exp_2025.get('product_gini'))} in 2025; import Product Gini rises from {dec(imp_1988.get('product_gini'))} to {dec(imp_2025.get('product_gini'))}.",
+                f"Supports. Median export Product Gini across HS6 products changes from {dec(exp_start.get('product_gini'))} in {sample_year_min} to {dec(exp_end.get('product_gini'))} in {sample_year_max}; import Product Gini changes from {dec(imp_start.get('product_gini'))} to {dec(imp_end.get('product_gini'))}.",
                 [
                     ("Map and lines", "#map-lines"),
                     ("Panel CSV", "assets/downloads/exercise_01_concentration_all_years.csv"),
@@ -1131,10 +1171,10 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             hypothesis_card(
                 "Exercise 4",
                 "Dominant supplier by product",
-                "Imports are concentrated because each product has one dominant global source.",
-                "For many products, country imports come mostly from the top source country.",
+                "Imports are concentrated because each product has one dominant supplier source.",
+                "For many importer-product rows, country imports come mostly from the top source country; for a stricter global claim, the world product market is dominated by one supplier.",
                 "Import concentration remains high even when supplier shares within products are diffuse.",
-                f"Supports a meaningful but incomplete mechanism. The median product top-supplier share is {pct(ex4['summary'].get('median_top_supplier_share'))}; products above 75% top-supplier share are {pct(ex4['summary'].get('share_products_top_supplier_ge_75'))} of rows but only {pct(ex4['summary'].get('import_value_share_products_top_supplier_ge_75'))} of value. In the latest-country counterfactual, equalizing suppliers within observed HS6 products reduces median import Partner Gini by {dec(partner_counterfactual_summary.get('partner_gini_reduction'))}, or {pct(partner_counterfactual_summary.get('explained_share'))} of actual Partner Gini.",
+                f"Supports a meaningful but incomplete mechanism. In Exercise 4, the median importer-product top-supplier share is {pct(ex4['summary'].get('median_top_supplier_share'))}; products above 75% top-supplier share are {pct(ex4['summary'].get('share_products_top_supplier_ge_75'))} of rows but only {pct(ex4['summary'].get('import_value_share_products_top_supplier_ge_75'))} of value. In H2.4, the full-world {h24_latest_year} median top-supplier share is lower at {pct(h24_latest.get('median_top_supplier_share'))}, with only {pct(h24_latest.get('share_products_top_supplier_ge_75'))} of world product markets above 75%.",
                 [
                     ("Supplier dominance", "#supplier-dominance"),
                     ("Partner-Gini counterfactual", "#partner-gini-counterfactual"),
@@ -1181,10 +1221,12 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
         "imports_hypotheses": imports_hypotheses,
         "methods_hypothesis": methods_hypothesis,
         "overview_cards": overview_cards,
+        "sample_country_count": str(sample_country_count),
+        "sample_year_min": str(sample_year_min),
+        "sample_year_max": str(sample_year_max),
         "summary_text": (
-            f"The empirical extension keeps the 33-country Panagariya-Bagaria sample and expands the time "
-            f"dimension to {data['metadata']['data_checks']['exercise_1']['year_min']}-"
-            f"{data['metadata']['data_checks']['exercise_1']['year_max']}. Median Product Ginis across HS6 products are "
+            f"The empirical extension uses a {sample_country_count}-country Comtrade reporter sample and covers "
+            f"{sample_year_min}-{sample_year_max}. Median Product Ginis across HS6 products are "
             f"{dec(exp.get('product_gini'))} for exports and {dec(imp.get('product_gini'))} for imports; "
             f"the Product-partner cell Gini medians across HS6-by-partner cells are {dec(exp.get('product_partner_cell_gini'))} and "
             f"{dec(imp.get('product_partner_cell_gini'))}."
@@ -1194,14 +1236,14 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             <li>Product Gini measures concentration across HS6 products: exports <strong>{dec(exp.get("product_gini"))}</strong>, imports <strong>{dec(imp.get("product_gini"))}</strong>.</li>
             <li>Partner Gini measures concentration across destination/source partners: exports <strong>{dec(exp.get("partner_gini"))}</strong>, imports <strong>{dec(imp.get("partner_gini"))}</strong>.</li>
             <li>Product-partner cell Gini measures concentration across HS6-by-partner cells: exports <strong>{dec(exp.get("product_partner_cell_gini"))}</strong>, imports <strong>{dec(imp.get("product_partner_cell_gini"))}</strong>.</li>
-            <li>Median export Product Gini rises from <strong>{dec(exp_1988.get("product_gini"))}</strong> in 1988 to <strong>{dec(exp_2025.get("product_gini"))}</strong> in 2025; import Product Gini rises from <strong>{dec(imp_1988.get("product_gini"))}</strong> to <strong>{dec(imp_2025.get("product_gini"))}</strong>.</li>
+            <li>Median export Product Gini changes from <strong>{dec(exp_start.get("product_gini"))}</strong> in {sample_year_min} to <strong>{dec(exp_end.get("product_gini"))}</strong> in {sample_year_max}; import Product Gini changes from <strong>{dec(imp_start.get("product_gini"))}</strong> to <strong>{dec(imp_end.get("product_gini"))}</strong>.</li>
           </ul>
         """,
         "map_note": evidence_note(
             "Are high trade Ginis broad across countries, or driven by only a few outliers?",
             "Select flow, metric, and year; darker countries have higher concentration for that country-year-flow.",
             "Many countries remain dark across the panel rather than only one or two outliers driving the picture.",
-            "High concentration appears across much of the 33-country sample, not just one country.",
+            f"High concentration appears across much of the {sample_country_count}-country sample, not just one country.",
         ),
         "line_note": evidence_note(
             "Is concentration persistent over time within countries?",
@@ -1269,6 +1311,7 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             <li>Intermediates are the largest import bucket: median import value share <strong>{pct(intermediates.get("import_value_share"))}</strong>.</li>
             <li>Across importer-years, the median product top-supplier share is <strong>{pct(ex4["summary"].get("median_top_supplier_share"))}</strong>.</li>
             <li>Products with top supplier share at least 75% are <strong>{pct(ex4["summary"].get("share_products_top_supplier_ge_75"))}</strong> of product rows but <strong>{pct(ex4["summary"].get("import_value_share_products_top_supplier_ge_75"))}</strong> of import value.</li>
+            <li>Using the stricter H2.4 world-product-market definition, the {h24_latest_year} median top-supplier share is <strong>{pct(h24_latest.get("median_top_supplier_share"))}</strong>, and only <strong>{pct(h24_latest.get("share_products_top_supplier_ge_75"))}</strong> of world HS6 product markets have a top supplier above 75%.</li>
             <li>In the latest-country counterfactual, neutralizing within-product supplier dominance reduces median import Partner Gini by <strong>{dec(partner_counterfactual_summary.get("partner_gini_reduction"))}</strong>, or <strong>{pct(partner_counterfactual_summary.get("explained_share"))}</strong> of the actual index.</li>
           </ul>
         """,
@@ -1284,16 +1327,17 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
             ],
         ),
         "supplier_text": (
-            f"For India in {india_supplier_year}, top-supplier share is at least 75% in "
-            f"{pct(india_supplier.get('share_products_top_supplier_ge_75'))} of imported HS6 rows, "
-            f"accounting for {pct(india_supplier.get('import_value_share_products_top_supplier_ge_75'))} "
-            f"of import value."
+            "There are two different supplier-dominance concepts. Exercise 4 is country-specific: within an "
+            "importer-country and HS6 product, it asks how much that country buys from its largest source. H2.4 is "
+            "global: within an HS6 product market, it asks how much of world reported imports comes from the largest "
+            "supplier country."
         ),
         "supplier_scope_note": (
-            f"The histogram is not India-only: it pools importer-HS6 product observations for all "
-            f"{latest_supplier_reporter_count} reporter countries with {latest_supplier_year} data. "
-            f"The India statistic above is separate because India's latest Exercise 4 year is {india_supplier_year}. "
-            f"Top-supplier share means the share of an importer-product's import value sourced from its largest supplier country."
+            f"In Exercise 4, top-supplier share is largest-source imports divided by one importer country's imports of that HS6 product. "
+            f"The interactive country-specific chart summarizes {latest_supplier_reporter_count} reporter countries with {latest_supplier_year} data, "
+            f"and India in {india_supplier_year} has top-supplier share at least 75% in {pct(india_supplier.get('share_products_top_supplier_ge_75'))} "
+            f"of imported HS6 rows. In H2.4, top-supplier share is largest supplier-country value divided by full-world reported imports of the HS6 product; "
+            f"in {h24_latest_year}, the median world product-market top-supplier share is {pct(h24_latest.get('median_top_supplier_share'))}."
         ),
         "supplier_scope_year": str(latest_supplier_year),
         "partner_counterfactual_text": (
@@ -1483,7 +1527,7 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       <article>
         <h2>Purpose of This Brief</h2>
         <ul class="callout-list">
-          <li><strong>Extension:</strong> the Product-Gini, Partner-Gini, and Product-partner-cell-Gini concentration facts remain visible in the 33-country panel from 1988 to 2025.</li>
+          <li><strong>Extension:</strong> the Product-Gini, Partner-Gini, and Product-partner-cell-Gini concentration facts remain visible in the country panel used by the current Exercise 1 artifact.</li>
           <li><strong>Robustness:</strong> removing oil, precious metals/gold, aircraft, ships, and arms lowers export concentration only modestly.</li>
           <li><strong>Mechanisms:</strong> import concentration has energy, supplier-dominance, and input-output pieces, but the broad intermediate-processing story is weakened by the product-level Exercise 11 regressions.</li>
         </ul>
@@ -1500,7 +1544,7 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
     extension_body = f"""
     <section class="page-title">
       <div class="eyebrow">Extension of the 2001 cross-section</div>
-      <h1>Concentration Persists Through the Full 1988-2025 Panel</h1>
+      <h1>Concentration Persists Through the Full Panel</h1>
     </section>
 
     <section class="section hypothesis-section">
@@ -1628,15 +1672,18 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
 
     <section class="section" id="supplier-dominance">
       <div class="section-heading">
-        <h2>Exercise 4: Dominant Suppliers</h2>
+        <h2>Exercise 4 and H2.4: Dominant Suppliers</h2>
         <p>{context["supplier_text"]}</p>
       </div>
       <div class="note">
         <p>{context["supplier_scope_note"]}</p>
       </div>
-      <div id="supplier-chart" class="chart"></div>
+      <div class="chart-grid">
+        <div id="supplier-chart" class="chart"></div>
+        <div id="world-supplier-chart" class="chart"></div>
+      </div>
       <div class="figure-row">
-        <figure><a class="figure-link" href="assets/figures/ex4_supplier_time.png"><img src="assets/figures/ex4_supplier_time.png" alt="Dominant supplier summary over time"></a><figcaption>Dominant supplier metrics over time.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/h24_importer_world_supplier_comparison.png"><img src="assets/figures/h24_importer_world_supplier_comparison.png" alt="Importer-country versus world product-market supplier dominance"></a><figcaption>Side-by-side comparison of country-specific sourcing dominance and global product-market supplier dominance.</figcaption></figure>
         <figure><a class="figure-link" href="assets/figures/ex4_supplier_distribution.png"><img src="assets/figures/ex4_supplier_distribution.png" alt="Latest-year distribution of top supplier shares"></a><figcaption>Top-supplier-share distribution across all available {context["supplier_scope_year"]} importer-HS6 product rows.</figcaption></figure>
       </div>
     </section>
@@ -1682,11 +1729,12 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
       </div>
       <h3 class="subsection-title">Commodity-exclusion robustness</h3>
       {context["commodity_table"]}
-      <div class="figure-row full-width">
-        <figure><a class="figure-link" href="assets/figures/ex11_export_linkage_decile.png"><img src="assets/figures/ex11_export_linkage_decile.png" alt="Export linkage by Product-Gini leave-one-out decile"></a><figcaption>HS6 export linkage by Product-Gini contribution decile.</figcaption></figure>
+      <div class="figure-row">
+        <figure><a class="figure-link" href="assets/figures/ex11_export_linkage_4pct.png"><img src="assets/figures/ex11_export_linkage_4pct.png" alt="HS6 export linkage by Product-Gini leave-one-out four-percent bins"></a><figcaption>HS6 export linkage by Product-Gini contribution, using 25 equal-count four-percent bins.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/ex11_hs2_linkage_4pct.png"><img src="assets/figures/ex11_hs2_linkage_4pct.png" alt="HS2 export linkage by summed Product-Gini leave-one-out four-percent bins"></a><figcaption>HS2 export linkage by summed HS6 Product-Gini contribution, using 25 equal-count four-percent bins.</figcaption></figure>
       </div>
       <h3 class="subsection-title">HS2 interactive robustness</h3>
-      <p class="note">HS2 means the two-digit Harmonized System chapter: a broad product sector such as HS27 mineral fuels, HS84 machinery, or HS85 electrical machinery. In the decile view, each dot is a bin of country-year-HS2 observations, matching the static figure logic. In the chapter view, each dot is one named HS2 chapter averaged across the panel.</p>
+      <p class="note">HS2 means the two-digit Harmonized System chapter: a broad product sector such as HS27 mineral fuels, HS84 machinery, or HS85 electrical machinery. The static figures above use the 4% bin specification; the interactive HS2 view keeps decile and chapter views for quick scanning.</p>
       <div class="controls compact">
         <label>Dot meaning <select id="hs2-linkage-view"><option value="decile">Decile averages</option><option value="chapter">HS2 chapters</option></select></label>
       </div>
@@ -1715,7 +1763,7 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
     <section class="section two-col" id="definitions">
       <article>
         <h2>Coverage</h2>
-        <p>The core panel covers 33 countries, annual observations from 1988 through 2025, and two flows: exports and imports. The empirical sample follows the local Exercise 1 output, which is the extension of the Panagariya-Bagaria country set.</p>
+        <p>The core panel covers {context["sample_country_count"]} countries, annual observations from {context["sample_year_min"]} through {context["sample_year_max"]}, and two flows: exports and imports. The empirical sample follows the local Exercise 1 output.</p>
         {context["countries_table"]}
       </article>
       <article>
@@ -2554,6 +2602,7 @@ def site_js() -> str:
   function setupImports() {
     renderImportBins();
     renderSupplierChart();
+    renderWorldSupplierChart();
     renderIoChart();
     renderHs2LinkageCharts();
     byId('hs2-linkage-view')?.addEventListener('change', renderHs2LinkageCharts);
@@ -2597,7 +2646,27 @@ def site_js() -> str:
       line: { color, width: 2 },
       hovertemplate: name + '<br>%{x}: %{y:.3f}<extra></extra>'
     }));
-    Plotly.react(node, traces, layout('Dominant supplier measures over time', 'Share'), config);
+    Plotly.react(node, traces, layout('Dominant supplier to a particular country', 'Share'), config);
+  }
+
+  function renderWorldSupplierChart() {
+    const node = byId('world-supplier-chart');
+    if (!node) return;
+    const rows = DATA.h24Supplier?.year_series || [];
+    const traces = [
+      ['median_top_supplier_share', 'Median top-supplier share', '#0f766e'],
+      ['share_products_top_supplier_ge_75', 'Share of products with top supplier >=75%', '#b7791f'],
+      ['import_value_share_top_supplier_ge_75', 'Import value share in >=75% products', '#2563eb']
+    ].map(([key, name, color]) => ({
+      type: 'scatter',
+      mode: 'lines+markers',
+      name,
+      x: rows.map((r) => r.year),
+      y: rows.map((r) => r[key]),
+      line: { color, width: 2 },
+      hovertemplate: name + '<br>%{x}: %{y:.3f}<extra></extra>'
+    }));
+    Plotly.react(node, traces, layout('Dominant supplier to all countries', 'Share'), config);
   }
 
   function renderIoChart() {

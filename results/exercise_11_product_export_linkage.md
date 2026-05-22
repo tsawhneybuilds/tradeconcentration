@@ -8,7 +8,7 @@ Do the HS6 products that make a country's total import basket more concentrated 
 
 ## Sample
 
-- Product-level rows: 5,524,696
+- Product-level rows: 5,568,474
 - Countries: 33
 - Years: 1988-2025
 - Unit: country-year-HS6 import product
@@ -23,11 +23,20 @@ Do the HS6 products that make a country's total import basket more concentrated 
 
 | model_label                                   | outcome            | term                           |    coef |   std_error |   p_value |    nobs |   clusters |   r2_within |
 |:----------------------------------------------|:-------------------|:-------------------------------|--------:|------------:|----------:|--------:|-----------:|------------:|
-| product_export_value_gini                     | asinh_export_value | loo_gini_contribution_z        | -4.9265 |      0.5528 |     0     | 5524696 |         33 |      0.1539 |
-| product_export_any_gini                       | export_any         | loo_gini_contribution_z        | -0.1296 |      0.022  |     0     | 5524696 |         33 |      0.037  |
-| product_export_value_partner_hhi              | asinh_export_value | loo_partner_hhi_contribution_z |  0.2237 |      0.0777 |     0.004 | 5524696 |         33 |      0.034  |
-| product_export_value_intermediate_interaction | asinh_export_value | loo_gini_contribution_z        | -4.8294 |      0.542  |     0     | 5524696 |         33 |      0.1556 |
-| product_export_value_intermediate_interaction | asinh_export_value | loo_gini_x_intermediate_z      | -0.7053 |      0.169  |     0     | 5524696 |         33 |      0.1556 |
+| product_export_value_gini                     | asinh_export_value | loo_gini_contribution_z        | -4.8624 |      0.5185 |    0      | 5568474 |         33 |      0.1583 |
+| product_export_any_gini                       | export_any         | loo_gini_contribution_z        | -0.1295 |      0.0213 |    0      | 5568474 |         33 |      0.0378 |
+| product_export_value_partner_hhi              | asinh_export_value | loo_partner_hhi_contribution_z |  0.2345 |      0.0892 |    0.0086 | 5568474 |         33 |      0.0337 |
+| product_export_value_intermediate_interaction | asinh_export_value | loo_gini_contribution_z        | -4.7737 |      0.5051 |    0      | 5568474 |         33 |      0.1584 |
+| product_export_value_intermediate_interaction | asinh_export_value | loo_gini_x_intermediate_z      | -0.5203 |      0.1627 |    0.0014 | 5568474 |         33 |      0.1584 |
+
+## Country-Year Fixed-Effect Logit
+
+The binary export outcome is also estimated with a country-year fixed-effect logit. This is the computationally feasible nonlinear probability model for the 5.5 million-row HS6 panel; it compares imported products within the same reporter-year and drops reporter-years with no within-group variation in `export_any`.
+
+| model_label                          | estimator                       | outcome    | term                    |    coef |   std_error |   p_value |    nobs |   groups |   dropped_no_variation_groups | converged   |
+|:-------------------------------------|:--------------------------------|:-----------|:------------------------|--------:|------------:|----------:|--------:|---------:|------------------------------:|:------------|
+| product_export_any_conditional_logit | country_year_fixed_effect_logit | export_any | loo_gini_contribution_z | -3.3891 |      0.009  |         0 | 5562527 |     1128 |                             2 | True        |
+| product_export_any_conditional_logit | country_year_fixed_effect_logit | export_any | import_value_share_z    |  4.1779 |      0.0116 |         0 | 5562527 |     1128 |                             2 | True        |
 
 ## Broader HS2 Robustness
 
@@ -35,11 +44,11 @@ The HS6 exact-product outcome may be too narrow for an intermediate-processing c
 
 | model_label                             | outcome                | term                                            |    coef |   std_error |   p_value |   nobs |   clusters |   r2_within |
 |:----------------------------------------|:-----------------------|:------------------------------------------------|--------:|------------:|----------:|-------:|-----------:|------------:|
-| hs2_export_value_gini                   | asinh_hs2_export_value | hs2_product_loo_gini_sum_z                      | -0.1862 |      0.0684 |    0.0065 | 108965 |         33 |      0.5721 |
-| hs2_export_any_gini                     | hs2_export_any         | hs2_product_loo_gini_sum_z                      | -0.002  |      0.002  |    0.3238 | 108965 |         33 |      0.0185 |
-| hs2_export_share_gini                   | hs2_export_share       | hs2_product_loo_gini_sum_z                      |  0.0022 |      0.0017 |    0.1851 | 108965 |         33 |      0.4502 |
-| hs2_export_value_intermediate_intensity | asinh_hs2_export_value | hs2_product_loo_gini_sum_z                      | -0.179  |      0.0659 |    0.0066 | 108965 |         33 |      0.5732 |
-| hs2_export_value_intermediate_intensity | asinh_hs2_export_value | hs2_product_loo_gini_sum_x_intermediate_share_z |  0.0198 |      0.0349 |    0.57   | 108965 |         33 |      0.5732 |
+| hs2_export_value_gini                   | asinh_hs2_export_value | hs2_product_loo_gini_sum_z                      | -0.1818 |      0.0659 |    0.0058 | 108369 |         33 |      0.5846 |
+| hs2_export_any_gini                     | hs2_export_any         | hs2_product_loo_gini_sum_z                      | -0.0021 |      0.0019 |    0.2639 | 108369 |         33 |      0.0192 |
+| hs2_export_share_gini                   | hs2_export_share       | hs2_product_loo_gini_sum_z                      |  0.0026 |      0.002  |    0.1766 | 108369 |         33 |      0.4454 |
+| hs2_export_value_intermediate_intensity | asinh_hs2_export_value | hs2_product_loo_gini_sum_z                      | -0.1671 |      0.065  |    0.0101 | 108369 |         33 |      0.5862 |
+| hs2_export_value_intermediate_intensity | asinh_hs2_export_value | hs2_product_loo_gini_sum_x_intermediate_share_z |  0.0467 |      0.0343 |    0.1735 | 108369 |         33 |      0.5862 |
 
 ## Commodity-Outlier Exclusion
 
@@ -47,14 +56,14 @@ The narrow HS6 regressions were also rerun after excluding coal (`2701`), crude 
 
 | sample                      | check                                         |    coef |   std_error |   ci_low |   ci_high |    nobs |   r2_within |
 |:----------------------------|:----------------------------------------------|--------:|------------:|---------:|----------:|--------:|------------:|
-| baseline                    | Export value: product-Gini contribution       | -4.9265 |      0.5528 |  -6.01   |   -3.843  | 5524696 |      0.1539 |
-| baseline                    | Export probability: product-Gini contribution | -0.1296 |      0.022  |  -0.1727 |   -0.0866 | 5524696 |      0.037  |
-| baseline                    | Export value: partner-HHI contribution        |  0.2237 |      0.0777 |   0.0715 |    0.3759 | 5524696 |      0.034  |
-| baseline                    | Intermediate interaction                      | -0.7053 |      0.169  |  -1.0366 |   -0.374  | 5524696 |      0.1556 |
-| excluding oil/gas/gold/coal | Export value: product-Gini contribution       | -4.1133 |      0.2784 |  -4.6589 |   -3.5677 | 5503557 |      0.1897 |
-| excluding oil/gas/gold/coal | Export probability: product-Gini contribution | -0.1095 |      0.0155 |  -0.1398 |   -0.0791 | 5503557 |      0.0437 |
-| excluding oil/gas/gold/coal | Export value: partner-HHI contribution        |  0.1504 |      0.0415 |   0.0689 |    0.2318 | 5503557 |      0.0427 |
-| excluding oil/gas/gold/coal | Intermediate interaction                      | -0.7789 |      0.1438 |  -1.0607 |   -0.4972 | 5503557 |      0.1939 |
+| baseline                    | Export value: product-Gini contribution       | -4.8624 |      0.5185 |  -5.8786 |   -3.8462 | 5568474 |      0.1583 |
+| baseline                    | Export probability: product-Gini contribution | -0.1295 |      0.0213 |  -0.1712 |   -0.0877 | 5568474 |      0.0378 |
+| baseline                    | Export value: partner-HHI contribution        |  0.2345 |      0.0892 |   0.0596 |    0.4094 | 5568474 |      0.0337 |
+| baseline                    | Intermediate interaction                      | -0.5203 |      0.1627 |  -0.8392 |   -0.2013 | 5568474 |      0.1584 |
+| excluding oil/gas/gold/coal | Export value: product-Gini contribution       | -3.6671 |      0.2219 |  -4.102  |   -3.2321 | 5547335 |      0.1981 |
+| excluding oil/gas/gold/coal | Export probability: product-Gini contribution | -0.0998 |      0.0133 |  -0.126  |   -0.0737 | 5547335 |      0.0457 |
+| excluding oil/gas/gold/coal | Export value: partner-HHI contribution        |  0.1199 |      0.0357 |   0.0499 |    0.1899 | 5547335 |      0.0466 |
+| excluding oil/gas/gold/coal | Intermediate interaction                      | -0.4692 |      0.1432 |  -0.7499 |   -0.1885 | 5547335 |      0.1989 |
 
 ## Files
 

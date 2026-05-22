@@ -8,6 +8,7 @@ Comtrade bulk files.
 
 from __future__ import annotations
 
+import argparse
 import math
 import shutil
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 import seaborn as sns
+from scipy.optimize import minimize
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,6 +39,7 @@ OUT_FIGURES = RESULTS / "exercise_11_product_export_linkage_figures"
 OUT_MEMO = RESULTS / "exercise_11_product_export_linkage.md"
 
 COMMODITY_OUTLIER_HS4 = {"2701", "2709", "2710", "2711", "7108"}
+EXCLUDED_HS6_CODES = {"999999"}
 
 BIN_ORDER = ["energy", "intermediates", "capital_goods", "final_consumption", "unmapped_or_ambiguous"]
 BIN_LABELS = {
@@ -104,6 +107,7 @@ def product_description_map() -> pd.DataFrame:
     cols = ["cmd_code", "hs_desc_official", "hs_desc_if_available"]
     raw = pd.read_csv(path, usecols=lambda col: col in cols, dtype={"cmd_code": str})
     raw["cmd_code"] = raw["cmd_code"].astype(str).str.extract(r"(\d{1,6})", expand=False).str.zfill(6)
+    raw = drop_excluded_hs6(raw)
     raw["product_description"] = raw.get("hs_desc_official", pd.Series(index=raw.index, dtype=object))
     if "hs_desc_if_available" in raw.columns:
         raw["product_description"] = raw["product_description"].fillna(raw["hs_desc_if_available"])
@@ -128,6 +132,7 @@ def load_unique_io_bridge() -> pd.DataFrame:
         return pd.DataFrame(columns=["cmd_code", "io_sector_code", "io_sector_label"])
     bridge = pd.read_csv(path, dtype={"cmd_code": str})
     bridge["cmd_code"] = bridge["cmd_code"].astype(str).str.extract(r"(\d{1,6})", expand=False).str.zfill(6)
+    bridge = drop_excluded_hs6(bridge)
     counts = bridge.groupby("cmd_code")["io_sector_code"].nunique().reset_index(name="sector_count")
     unique_codes = counts[counts["sector_count"] == 1][["cmd_code"]]
     bridge = bridge.merge(unique_codes, on="cmd_code", how="inner")
@@ -139,8 +144,18 @@ def normalize_cmd(series: pd.Series) -> pd.Series:
     return series.astype(str).str.extract(r"(\d{1,6})", expand=False).str.zfill(6)
 
 
+def drop_excluded_hs6(df: pd.DataFrame, code_col: str = "cmd_code") -> pd.DataFrame:
+    if df.empty or code_col not in df.columns:
+        return df
+    mask = normalize_cmd(df[code_col]).isin(EXCLUDED_HS6_CODES)
+    if not mask.any():
+        return df
+    return df.loc[~mask].copy()
+
+
 def loo_gini_frame(product_totals: pd.DataFrame) -> pd.DataFrame:
     work = product_totals[["cmd_code", "import_value"]].copy()
+    work = drop_excluded_hs6(work)
     work = work[pd.to_numeric(work["import_value"], errors="coerce") > 0].copy()
     if work.empty:
         return pd.DataFrame()
@@ -181,6 +196,7 @@ def partner_hhi_frame(supplier_values: pd.DataFrame) -> pd.DataFrame:
     work["trade_value"] = pd.to_numeric(work["trade_value"], errors="coerce")
     work = work.dropna(subset=["cmd_code", "partner_code", "trade_value"])
     work = work[work["trade_value"] > 0].copy()
+    work = drop_excluded_hs6(work)
     if work.empty:
         return pd.DataFrame(columns=["cmd_code"])
     work["partner_code"] = work["partner_code"].astype(int)
@@ -236,6 +252,7 @@ def export_product_frame(exports: pd.DataFrame) -> pd.DataFrame:
     work["trade_value"] = pd.to_numeric(work["trade_value"], errors="coerce")
     work = work.dropna(subset=["cmd_code", "trade_value"])
     work = work[work["trade_value"] > 0].copy()
+    work = drop_excluded_hs6(work)
     if work.empty:
         return pd.DataFrame(columns=["cmd_code", "export_value", "total_exports"])
     out = work.groupby("cmd_code", as_index=False)["trade_value"].sum().rename(columns={"trade_value": "export_value"})
@@ -250,6 +267,9 @@ def dominant_bin_frame(imports: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFram
     work["trade_value"] = pd.to_numeric(work["trade_value"], errors="coerce")
     work = work.dropna(subset=["cmd_code", "exercise_03_bin", "trade_value"])
     work = work[work["trade_value"] > 0].copy()
+    work = drop_excluded_hs6(work)
+    if work.empty:
+        return pd.DataFrame(columns=["cmd_code", "import_value"]), pd.DataFrame(columns=["cmd_code", "import_bin", "dominant_bin_import_value"])
     by_bin = work.groupby(["cmd_code", "exercise_03_bin"], as_index=False)["trade_value"].sum()
     by_product = by_bin.groupby("cmd_code", as_index=False)["trade_value"].sum().rename(columns={"trade_value": "import_value"})
     dom = (
@@ -367,7 +387,7 @@ def panel_for_file(import_path: Path, supplier_path: Path | None, export_path: P
     for col in PANEL_COLUMNS:
         if col not in panel.columns:
             panel[col] = np.nan
-    return panel[PANEL_COLUMNS].copy()
+    return drop_excluded_hs6(panel[PANEL_COLUMNS].copy())
 
 
 def build_product_panel() -> pd.DataFrame:
@@ -401,10 +421,12 @@ def build_product_panel() -> pd.DataFrame:
     return pd.read_parquet(OUT_DATA)
 
 
-def load_or_build_product_panel() -> pd.DataFrame:
+def load_or_build_product_panel(rebuild: bool = False) -> pd.DataFrame:
+    if rebuild and OUT_DATA.exists():
+        OUT_DATA.unlink()
     if OUT_DATA.exists():
         print(f"loading existing {OUT_DATA.relative_to(ROOT)}", flush=True)
-        return pd.read_parquet(OUT_DATA)
+        return drop_excluded_hs6(pd.read_parquet(OUT_DATA))
     return build_product_panel()
 
 
@@ -429,10 +451,36 @@ class OLSResult:
     r2_within: float
 
 
+@dataclass
+class FELogitResult:
+    model_label: str
+    outcome: str
+    terms: list[str]
+    beta: np.ndarray
+    se: np.ndarray
+    nobs: int
+    groups: int
+    dropped_groups: int
+    dropped_obs: int
+    loglike: float
+    converged: bool
+    iterations: int
+    message: str
+
+
 def normal_pvalue(t_stat: float) -> float:
     if not np.isfinite(t_stat):
         return np.nan
     return math.erfc(abs(t_stat) / math.sqrt(2.0))
+
+
+def logistic_cdf(values: np.ndarray) -> np.ndarray:
+    out = np.empty_like(values, dtype=float)
+    positive = values >= 0
+    out[positive] = 1.0 / (1.0 + np.exp(-values[positive]))
+    exp_values = np.exp(values[~positive])
+    out[~positive] = exp_values / (1.0 + exp_values)
+    return out
 
 
 def fixed_effect_cluster_ols(df: pd.DataFrame, outcome: str, terms: list[str], fe_col: str, cluster_col: str, model_label: str) -> OLSResult:
@@ -501,6 +549,37 @@ def results_to_frame(results: list[OLSResult]) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+def fe_logit_to_frame(result: FELogitResult) -> pd.DataFrame:
+    rows = []
+    for idx, term in enumerate(result.terms):
+        coef = float(result.beta[idx])
+        se = float(result.se[idx])
+        z_stat = coef / se if se > 0 else np.nan
+        rows.append(
+            {
+                "model_label": result.model_label,
+                "estimator": "country_year_fixed_effect_logit",
+                "outcome": result.outcome,
+                "term": term,
+                "coef": coef,
+                "std_error": se,
+                "z_stat": z_stat,
+                "p_value": normal_pvalue(z_stat),
+                "ci_low": coef - 1.96 * se if np.isfinite(se) else np.nan,
+                "ci_high": coef + 1.96 * se if np.isfinite(se) else np.nan,
+                "nobs": result.nobs,
+                "groups": result.groups,
+                "dropped_no_variation_groups": result.dropped_groups,
+                "dropped_no_variation_obs": result.dropped_obs,
+                "loglike": result.loglike,
+                "converged": result.converged,
+                "iterations": result.iterations,
+                "message": result.message,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def build_regression_sample(panel: pd.DataFrame) -> pd.DataFrame:
     df = panel.copy()
     df["country_year"] = df["reporter_code"].astype(str) + "_" + df["year"].astype(str)
@@ -512,6 +591,123 @@ def build_regression_sample(panel: pd.DataFrame) -> pd.DataFrame:
     df["bin_final_consumption"] = (df["import_bin"] == "final_consumption").astype(int)
     df["bin_unmapped"] = (df["import_bin"] == "unmapped_or_ambiguous").astype(int)
     return df
+
+
+def fixed_effect_logit(
+    df: pd.DataFrame,
+    outcome: str,
+    terms: list[str],
+    fe_col: str,
+    model_label: str,
+    maxiter: int = 200,
+) -> FELogitResult:
+    work = df[[outcome, *terms, fe_col]].replace([np.inf, -np.inf], np.nan).dropna().copy()
+    work[outcome] = pd.to_numeric(work[outcome], errors="coerce")
+    work = work[work[outcome].isin([0, 1])].copy()
+    group_outcomes = work.groupby(fe_col)[outcome].agg(["sum", "size"])
+    varying_groups = group_outcomes[(group_outcomes["sum"] > 0) & (group_outcomes["sum"] < group_outcomes["size"])].index
+    dropped_groups = int(len(group_outcomes) - len(varying_groups))
+    dropped_obs = int(group_outcomes.loc[~group_outcomes.index.isin(varying_groups), "size"].sum()) if dropped_groups else 0
+    work = work[work[fe_col].isin(varying_groups)].copy()
+    y = work[outcome].to_numpy(dtype=float)
+    x = work[terms].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
+    group_codes = pd.Categorical(work[fe_col]).codes
+    nobs, k = x.shape
+    groups = int(group_codes.max() + 1) if nobs else 0
+    if nobs == 0 or groups == 0:
+        return FELogitResult(
+            model_label=model_label,
+            outcome=outcome,
+            terms=terms,
+            beta=np.full(k, np.nan),
+            se=np.full(k, np.nan),
+            nobs=nobs,
+            groups=groups,
+            dropped_groups=dropped_groups,
+            dropped_obs=dropped_obs,
+            loglike=np.nan,
+            converged=False,
+            iterations=0,
+            message="no usable groups with within-group outcome variation",
+        )
+
+    def objective(params: np.ndarray) -> tuple[float, np.ndarray]:
+        beta = params[:k]
+        alpha = params[k:]
+        eta = x @ beta + alpha[group_codes]
+        nll = float(np.logaddexp(0.0, eta).sum() - y @ eta)
+        mu = logistic_cdf(eta)
+        resid = mu - y
+        grad_beta = x.T @ resid
+        grad_alpha = np.bincount(group_codes, weights=resid, minlength=groups)
+        return nll, np.concatenate([grad_beta, grad_alpha])
+
+    start = np.zeros(k + groups, dtype=float)
+    fit = minimize(
+        objective,
+        start,
+        method="L-BFGS-B",
+        jac=True,
+        options={"maxiter": maxiter, "ftol": 1e-8, "gtol": 1e-5, "maxls": 30},
+    )
+    beta = fit.x[:k]
+    alpha = fit.x[k:]
+    eta = x @ beta + alpha[group_codes]
+    mu = logistic_cdf(eta)
+    weights = np.maximum(mu * (1.0 - mu), 1e-12)
+
+    info_beta = x.T @ (weights[:, None] * x)
+    weighted_x_by_group = np.vstack(
+        [
+            np.bincount(group_codes, weights=weights * x[:, col], minlength=groups)
+            for col in range(k)
+        ]
+    ).T
+    weight_by_group = np.bincount(group_codes, weights=weights, minlength=groups)
+    valid_weight = weight_by_group > 0
+    if valid_weight.any():
+        adjustment = (weighted_x_by_group[valid_weight].T / weight_by_group[valid_weight]) @ weighted_x_by_group[valid_weight]
+        info_beta = info_beta - adjustment
+    cov_beta = np.linalg.pinv(info_beta)
+    se = np.sqrt(np.maximum(np.diag(cov_beta), 0))
+    loglike = -float(fit.fun)
+    return FELogitResult(
+        model_label=model_label,
+        outcome=outcome,
+        terms=terms,
+        beta=beta,
+        se=se,
+        nobs=nobs,
+        groups=groups,
+        dropped_groups=dropped_groups,
+        dropped_obs=dropped_obs,
+        loglike=loglike,
+        converged=bool(fit.success),
+        iterations=int(getattr(fit, "nit", 0)),
+        message=str(fit.message),
+    )
+
+
+def run_conditional_logit(panel: pd.DataFrame) -> pd.DataFrame:
+    df = build_regression_sample(panel)
+    terms = [
+        "loo_gini_contribution_z",
+        "import_value_share_z",
+        "bin_energy",
+        "bin_capital_goods",
+        "bin_final_consumption",
+        "bin_unmapped",
+    ]
+    result = fixed_effect_logit(
+        df,
+        outcome="export_any",
+        terms=terms,
+        fe_col="country_year",
+        model_label="product_export_any_conditional_logit",
+    )
+    out = fe_logit_to_frame(result)
+    out.to_csv(OUT_TABLES / "conditional_logit_results.csv", index=False)
+    return out
 
 
 def run_product_regressions(panel: pd.DataFrame, table_suffix: str = "", sample_label: str = "baseline") -> tuple[pd.DataFrame, pd.DataFrame]:
@@ -864,6 +1060,83 @@ def label_top_points(ax: plt.Axes, df: pd.DataFrame, x: str, y: str, label_col: 
         )
 
 
+def quantile_export_probability_table(
+    df: pd.DataFrame,
+    score_col: str,
+    export_any_col: str,
+    export_value_col: str,
+    bins: int,
+    bin_label: str,
+) -> pd.DataFrame:
+    work = df[[score_col, export_any_col, export_value_col]].replace([np.inf, -np.inf], np.nan).dropna().copy()
+    work[score_col] = pd.to_numeric(work[score_col], errors="coerce")
+    work[export_any_col] = pd.to_numeric(work[export_any_col], errors="coerce")
+    work[export_value_col] = pd.to_numeric(work[export_value_col], errors="coerce")
+    work = work.dropna()
+    if work.empty:
+        return pd.DataFrame(
+            columns=[
+                "bin",
+                "bin_label",
+                "observations",
+                "exported_count",
+                "score_min",
+                "score_max",
+                "mean_loo_gini",
+                "export_probability",
+                "export_probability_se",
+                "export_probability_ci_low",
+                "export_probability_ci_high",
+                "mean_asinh_export_value",
+            ]
+        )
+    work["bin"] = pd.qcut(work[score_col], bins, labels=False, duplicates="drop") + 1
+    out = work.groupby("bin", observed=True).agg(
+        observations=(export_any_col, "size"),
+        exported_count=(export_any_col, "sum"),
+        score_min=(score_col, "min"),
+        score_max=(score_col, "max"),
+        mean_loo_gini=(score_col, "mean"),
+        export_probability=(export_any_col, "mean"),
+        mean_asinh_export_value=(export_value_col, "mean"),
+    ).reset_index()
+    out["bin"] = out["bin"].astype(int)
+    out.insert(1, "bin_label", bin_label)
+    out["export_probability_se"] = np.sqrt(
+        out["export_probability"] * (1.0 - out["export_probability"]) / out["observations"].replace(0, np.nan)
+    )
+    out["export_probability_ci_low"] = np.maximum(0.0, out["export_probability"] - 1.96 * out["export_probability_se"])
+    out["export_probability_ci_high"] = np.minimum(1.0, out["export_probability"] + 1.96 * out["export_probability_se"])
+    return out
+
+
+def plot_export_probability_table(
+    table: pd.DataFrame,
+    figure_name: str,
+    score_label: str,
+    probability_label: str,
+    value_label: str,
+    title_prefix: str,
+) -> None:
+    if table.empty:
+        return
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    x = table["mean_loo_gini"].to_numpy(dtype=float)
+    p = table["export_probability"].to_numpy(dtype=float)
+    lo = table["export_probability_ci_low"].to_numpy(dtype=float)
+    hi = table["export_probability_ci_high"].to_numpy(dtype=float)
+    axes[0].plot(x, p, marker="o", color="#2f5d62", linewidth=1.8, markersize=4)
+    axes[0].fill_between(x, lo, hi, color="#2f5d62", alpha=0.16, linewidth=0)
+    axes[0].set_xlabel(score_label)
+    axes[0].set_ylabel(probability_label)
+    axes[0].set_title(f"{title_prefix} Export Probability")
+    axes[1].plot(x, table["mean_asinh_export_value"], marker="o", color="#8c4f2b", linewidth=1.8, markersize=4)
+    axes[1].set_xlabel(score_label)
+    axes[1].set_ylabel(value_label)
+    axes[1].set_title(f"{title_prefix} Export Value")
+    savefig(figure_name)
+
+
 def make_figures(panel: pd.DataFrame, sector: pd.DataFrame, effects: pd.DataFrame) -> None:
     sns.set_theme(style="whitegrid", context="paper", font_scale=1.05)
     panel = panel.copy()
@@ -935,6 +1208,24 @@ def make_figures(panel: pd.DataFrame, sector: pd.DataFrame, effects: pd.DataFram
     axes[1].set_title("Export Value by Import-Concentration Contribution")
     savefig("ex11_export_linkage_by_loo_decile.png")
 
+    pct4 = quantile_export_probability_table(
+        panel,
+        score_col="loo_gini_contribution",
+        export_any_col="export_any",
+        export_value_col="asinh_export_value",
+        bins=25,
+        bin_label="4pct",
+    )
+    pct4.to_csv(OUT_TABLES / "ex11_export_linkage_by_loo_4pct_bin.csv", index=False)
+    plot_export_probability_table(
+        pct4,
+        "ex11_export_linkage_by_loo_4pct_bin.png",
+        "Mean LOO Gini contribution by 4% bin",
+        "Probability product is exported",
+        "Mean asinh export value",
+        "HS6 4% bins",
+    )
+
     effects_plot = effects.copy()
     effects_plot = effects_plot[effects_plot["effect"].isin(["Non-intermediate slope", "Intermediate slope", "Intermediate minus non-intermediate"])]
     plt.figure(figsize=(9, 5.5))
@@ -1005,6 +1296,24 @@ def make_hs2_figures(hs2: pd.DataFrame) -> None:
     axes[1].set_title("HS2 Export Value by Import-Concentration Contribution")
     savefig("ex11_hs2_export_linkage_by_loo_decile.png")
 
+    pct4 = quantile_export_probability_table(
+        hs2,
+        score_col="hs2_product_loo_gini_sum",
+        export_any_col="hs2_export_any",
+        export_value_col="asinh_hs2_export_value",
+        bins=25,
+        bin_label="4pct",
+    )
+    pct4.to_csv(OUT_TABLES / "ex11_hs2_export_linkage_by_loo_4pct_bin.csv", index=False)
+    plot_export_probability_table(
+        pct4,
+        "ex11_hs2_export_linkage_by_loo_4pct_bin.png",
+        "Mean summed HS6 LOO Gini contribution by 4% HS2 bin",
+        "Probability HS2 chapter is exported",
+        "Mean asinh HS2 export value",
+        "HS2 4% bins",
+    )
+
     india_year = int(hs2.loc[hs2["iso3"].eq("IND"), "year"].max())
     india = hs2[(hs2["iso3"] == "IND") & (hs2["year"] == india_year)].copy()
     india = india.replace([np.inf, -np.inf], np.nan).dropna(subset=["hs2_product_loo_gini_sum", "hs2_export_share"])
@@ -1070,6 +1379,7 @@ def make_tables(
     sector: pd.DataFrame,
     hs2: pd.DataFrame,
     product_reg: pd.DataFrame,
+    conditional_logit: pd.DataFrame,
     sector_reg: pd.DataFrame,
     hs2_reg: pd.DataFrame,
     commodity_stats: pd.DataFrame,
@@ -1129,10 +1439,17 @@ def make_tables(
     reg_selected = reg_selected[reg_selected["term"].isin(selected_terms)].copy()
     reg_selected.to_csv(OUT_TABLES / "selected_regression_coefficients.csv", index=False)
 
+    if not conditional_logit.empty:
+        conditional_logit[conditional_logit["term"].isin(["loo_gini_contribution_z", "import_value_share_z"])].to_csv(
+            OUT_TABLES / "selected_conditional_logit_coefficients.csv",
+            index=False,
+        )
+
 
 def write_memo(
     panel: pd.DataFrame,
     product_reg: pd.DataFrame,
+    conditional_logit: pd.DataFrame,
     sector: pd.DataFrame,
     sector_reg: pd.DataFrame,
     hs2: pd.DataFrame,
@@ -1146,6 +1463,23 @@ def write_memo(
         (product_reg["model_label"].isin(["product_export_value_gini", "product_export_any_gini", "product_export_value_partner_hhi", "product_export_value_intermediate_interaction"]))
         & (product_reg["term"].isin(["loo_gini_contribution_z", "loo_partner_hhi_contribution_z", "loo_gini_x_intermediate_z"]))
     ][["model_label", "outcome", "term", "coef", "std_error", "p_value", "nobs", "clusters", "r2_within"]].copy()
+    clogit_key = conditional_logit[
+        conditional_logit["term"].isin(["loo_gini_contribution_z", "import_value_share_z"])
+    ][
+        [
+            "model_label",
+            "estimator",
+            "outcome",
+            "term",
+            "coef",
+            "std_error",
+            "p_value",
+            "nobs",
+            "groups",
+            "dropped_no_variation_groups",
+            "converged",
+        ]
+    ].copy()
     memo = f"""# Exercise 11: Product Contribution and Export Linkage
 
 Generated from checkpointed aggregate files.
@@ -1170,6 +1504,12 @@ Do the HS6 products that make a country's total import basket more concentrated 
 ## Selected Regression Results
 
 {key.round(4).to_markdown(index=False)}
+
+## Country-Year Fixed-Effect Logit
+
+The binary export outcome is also estimated with a country-year fixed-effect logit. This is the computationally feasible nonlinear probability model for the 5.5 million-row HS6 panel; it compares imported products within the same reporter-year and drops reporter-years with no within-group variation in `export_any`.
+
+{clogit_key.round(4).to_markdown(index=False) if not clogit_key.empty else "No fixed-effect logit output."}
 
 ## Broader HS2 Robustness
 
@@ -1204,10 +1544,22 @@ def copy_figures_to_overleaf() -> None:
         shutil.copy2(path, overleaf_figs / path.name)
 
 
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--rebuild-panel",
+        action="store_true",
+        help="Rebuild the product-export-linkage panel instead of reusing the cached parquet.",
+    )
+    return parser.parse_args()
+
+
 def main() -> int:
+    args = parse_args()
     ensure_dirs()
-    panel = load_or_build_product_panel()
+    panel = load_or_build_product_panel(rebuild=args.rebuild_panel)
     product_reg, effects = run_product_regressions(panel)
+    conditional_logit = run_conditional_logit(panel)
     commodity_reg, commodity_effects, commodity_comparison = run_commodity_exclusion(panel, product_reg)
     sector = build_sector_panel(panel)
     sector_reg = run_sector_regressions(sector)
@@ -1217,8 +1569,8 @@ def main() -> int:
     make_hs2_figures(hs2)
     make_commodity_exclusion_figure(commodity_comparison)
     commodity_stats = pd.read_csv(OUT_TABLES / "commodity_outlier_exclusion_stats.csv")
-    make_tables(panel, sector, hs2, product_reg, sector_reg, hs2_reg, commodity_stats)
-    write_memo(panel, product_reg, sector, sector_reg, hs2, hs2_reg, commodity_comparison)
+    make_tables(panel, sector, hs2, product_reg, conditional_logit, sector_reg, hs2_reg, commodity_stats)
+    write_memo(panel, product_reg, conditional_logit, sector, sector_reg, hs2, hs2_reg, commodity_comparison)
     copy_figures_to_overleaf()
     print(f"wrote {OUT_TABLES.relative_to(ROOT)}")
     print(f"wrote {OUT_FIGURES.relative_to(ROOT)}")

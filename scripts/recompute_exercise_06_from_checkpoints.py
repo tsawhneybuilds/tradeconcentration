@@ -8,6 +8,7 @@ cell values for every raw file.
 
 from __future__ import annotations
 
+import argparse
 import traceback
 from pathlib import Path
 
@@ -19,17 +20,23 @@ from trade_concentration_pipeline import (
     RESULTS,
     checkpoint_name_for_raw,
     compute_exercise_06_outputs_for_leaf,
+    configure_country_sample,
+    drop_excluded_hs6,
     hs_bulk_files,
     make_exercise_06_figures,
     now_utc,
     save_country_panel,
+    sample_processed_dir,
+    sample_processed_path,
+    sample_results_dir,
     write_exercise_06_memo,
     write_json,
     write_text,
 )
 
 
-PARTIAL_DIR = DATA_PROCESSED / "exercise_02_12_file_aggregates"
+BASE_PARTIAL_DIR = DATA_PROCESSED / "exercise_02_12_file_aggregates"
+PARTIAL_DIR = BASE_PARTIAL_DIR
 
 
 def write_parquet_best_effort(df: pd.DataFrame, path: Path) -> None:
@@ -61,10 +68,33 @@ def load_leaf_cells(partial: Path) -> pd.DataFrame:
     df["cmd_code"] = df["cmd_code"].astype(str)
     df["hs2"] = df["hs2"].astype(str).str.zfill(2).str[:2]
     df["trade_value"] = pd.to_numeric(df["trade_value"], errors="coerce")
-    return df[df["trade_value"] > 0].copy()
+    df = df[df["trade_value"] > 0].copy()
+    return drop_excluded_hs6(df)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Recompute Exercise 6 from Exercise 2/12 checkpoints.")
+    parser.add_argument("--country-sample", choices=["prof_p_33", "world_broad"], default="prof_p_33")
+    parser.add_argument("--min-available-years", type=int, default=10)
+    parser.add_argument("--start-year", type=int, default=1988)
+    parser.add_argument("--end-year", type=int, default=None)
+    parser.add_argument("--refresh-availability", action="store_true")
+    return parser.parse_args()
 
 
 def main() -> None:
+    args = parse_args()
+    configure_country_sample(
+        country_sample=args.country_sample,
+        min_available_years=args.min_available_years,
+        start_year=args.start_year,
+        end_year=args.end_year,
+        refresh_availability=args.refresh_availability,
+    )
+    global PARTIAL_DIR
+    global EX06_TABLES
+    EX06_TABLES = sample_results_dir(args.country_sample) / "exercise_06_tables"
+    PARTIAL_DIR = BASE_PARTIAL_DIR if args.country_sample == "prof_p_33" else sample_processed_dir(args.country_sample) / "exercise_02_12_file_aggregates"
     raw_files = hs_bulk_files()
     expected_partials = [PARTIAL_DIR / checkpoint_name_for_raw(path) for path in raw_files]
     missing = [path for path in expected_partials if not path.exists()]
@@ -92,7 +122,8 @@ def main() -> None:
     exclusions = pd.concat(output_frames, ignore_index=True)
     EX06_TABLES.mkdir(parents=True, exist_ok=True)
     exclusions.to_csv(EX06_TABLES / "concentration_exclusions_all_years.csv", index=False)
-    write_parquet_best_effort(exclusions, DATA_PROCESSED / "concentration_exclusions_all_years.parquet")
+    exclusions_parquet = sample_processed_path("concentration_exclusions_all_years.parquet")
+    write_parquet_best_effort(exclusions, exclusions_parquet)
 
     if removal_frames:
         removed = pd.concat(removal_frames, ignore_index=True)
@@ -105,14 +136,15 @@ def main() -> None:
         {
             "created_at_utc": now_utc(),
             "mode": "exercise_06_from_exercise_02_12_checkpoints",
+            "country_sample": args.country_sample,
             "raw_files_seen": len(raw_files),
             "checkpoint_files_seen": len(expected_partials),
             "checkpoint_files_with_rows": files_with_rows,
             "rows_exclusions": int(len(exclusions)),
             "parquet_error_file": str(
-                (DATA_PROCESSED / "concentration_exclusions_all_years.parquet.error.txt").relative_to(Path.cwd())
+                exclusions_parquet.with_suffix(exclusions_parquet.suffix + ".error.txt").relative_to(Path.cwd())
             )
-            if (DATA_PROCESSED / "concentration_exclusions_all_years.parquet.error.txt").exists()
+            if exclusions_parquet.with_suffix(exclusions_parquet.suffix + ".error.txt").exists()
             else None,
             "exercises_md_updated": False,
         },

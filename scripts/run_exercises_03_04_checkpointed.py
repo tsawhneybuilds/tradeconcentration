@@ -20,6 +20,7 @@ from trade_concentration_pipeline import (
     EX04_PARTIAL_DIR,
     RESULTS,
     apply_memory_limit,
+    configure_country_sample,
     ensure_dirs,
     exercise_03_partial_paths,
     exercise_04_partial_path,
@@ -35,6 +36,31 @@ from trade_concentration_pipeline import (
 
 WORKER_MAPPING = None
 WORKER_CHUNK_ROWS = DEFAULT_CHUNK_ROWS
+WORKER_SAMPLE_CONFIG = None
+ACTIVE_EX03_PARTIAL_DIR = EX03_PARTIAL_DIR
+ACTIVE_EX04_PARTIAL_DIR = EX04_PARTIAL_DIR
+
+
+def configure_runner_sample(
+    country_sample: str,
+    min_available_years: int,
+    start_year: int,
+    end_year: int | None,
+    refresh_availability: bool,
+) -> None:
+    configure_country_sample(
+        country_sample=country_sample,
+        min_available_years=min_available_years,
+        start_year=start_year,
+        end_year=end_year,
+        refresh_availability=refresh_availability,
+    )
+    import trade_concentration_pipeline as pipeline
+
+    global ACTIVE_EX03_PARTIAL_DIR
+    global ACTIVE_EX04_PARTIAL_DIR
+    ACTIVE_EX03_PARTIAL_DIR = pipeline.EX03_PARTIAL_DIR
+    ACTIVE_EX04_PARTIAL_DIR = pipeline.EX04_PARTIAL_DIR
 
 
 def is_readable_parquet(path: Path) -> bool:
@@ -60,10 +86,14 @@ def complete_ex04_partial(path: Path) -> Path | None:
     return partial if is_readable_parquet(partial) else None
 
 
-def init_worker(chunk_rows: int = DEFAULT_CHUNK_ROWS, memory_limit_gb: float | None = None) -> None:
+def init_worker(chunk_rows: int = DEFAULT_CHUNK_ROWS, memory_limit_gb: float | None = None, sample_config: dict | None = None) -> None:
     global WORKER_MAPPING
     global WORKER_CHUNK_ROWS
+    global WORKER_SAMPLE_CONFIG
     apply_memory_limit(memory_limit_gb)
+    if sample_config is not None:
+        configure_country_sample(**sample_config)
+        WORKER_SAMPLE_CONFIG = sample_config
     WORKER_MAPPING = load_approved_bec5_mapping()
     WORKER_CHUNK_ROWS = int(chunk_rows)
 
@@ -103,7 +133,20 @@ def run(
     workers: int = 1,
     chunk_rows: int = DEFAULT_CHUNK_ROWS,
     memory_limit_gb: float | None = None,
+    country_sample: str = "prof_p_33",
+    min_available_years: int = 10,
+    start_year: int = 1988,
+    end_year: int | None = None,
+    refresh_availability: bool = False,
 ) -> None:
+    configure_runner_sample(country_sample, min_available_years, start_year, end_year, refresh_availability)
+    worker_sample_config = {
+        "country_sample": country_sample,
+        "min_available_years": min_available_years,
+        "start_year": start_year,
+        "end_year": end_year,
+        "refresh_availability": False,
+    }
     apply_memory_limit(memory_limit_gb)
     ensure_dirs()
     files = hs_bulk_files(max_files=max_files)
@@ -111,7 +154,7 @@ def run(
         raise FileNotFoundError("No HS Comtrade bulk files found.")
 
     if fresh:
-        for directory in [EX03_PARTIAL_DIR, EX04_PARTIAL_DIR]:
+        for directory in [ACTIVE_EX03_PARTIAL_DIR, ACTIVE_EX04_PARTIAL_DIR]:
             for partial in directory.glob("*.parquet"):
                 partial.unlink()
 
@@ -124,11 +167,11 @@ def run(
     else:
         if workers > 1:
             ctx = get_context("spawn")
-            with ctx.Pool(processes=workers, initializer=init_worker, initargs=(chunk_rows, memory_limit_gb)) as pool:
+            with ctx.Pool(processes=workers, initializer=init_worker, initargs=(chunk_rows, memory_limit_gb, worker_sample_config)) as pool:
                 for idx, (name, status) in enumerate(pool.imap_unordered(process_one_file, [str(path) for path in files]), start=1):
                     print(f"[{idx}/{len(files)}] {status} {name}", flush=True)
         else:
-            init_worker(chunk_rows, memory_limit_gb=None)
+            init_worker(chunk_rows, memory_limit_gb=None, sample_config=worker_sample_config)
             for idx, path in enumerate(files, start=1):
                 name, status = process_one_file(str(path))
                 print(f"[{idx}/{len(files)}] {status} {name}", flush=True)
@@ -146,7 +189,8 @@ def run(
         source_details={
             "mode": "exercises_03_04_checkpointed",
             "hs_bulk_files_processed": len(files),
-            "partial_dir": str(EX03_PARTIAL_DIR),
+            "partial_dir": str(ACTIVE_EX03_PARTIAL_DIR),
+            "country_sample": country_sample,
         },
     )
     ex04 = finalize_exercise_04_from_partials(
@@ -154,7 +198,8 @@ def run(
         source_details={
             "mode": "exercises_03_04_checkpointed",
             "hs_bulk_files_processed": len(files),
-            "partial_dir": str(EX04_PARTIAL_DIR),
+            "partial_dir": str(ACTIVE_EX04_PARTIAL_DIR),
+            "country_sample": country_sample,
         },
     )
 
@@ -163,6 +208,7 @@ def run(
         {
             "created_at_utc": now_utc(),
             "mode": "exercises_03_04_checkpointed",
+            "country_sample": country_sample,
             "exercises_md_updated": False,
             "hs_bulk_files_available": len(files),
             "workers": int(workers),
@@ -184,6 +230,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workers", type=int, default=1, help="Parallel raw-file workers for checkpoint creation.")
     parser.add_argument("--chunk-rows", type=int, default=DEFAULT_CHUNK_ROWS, help="Raw Comtrade rows per chunk.")
     parser.add_argument("--memory-limit-gb", type=float, default=None, help="Optional process memory cap.")
+    parser.add_argument("--country-sample", choices=["prof_p_33", "world_broad"], default="prof_p_33")
+    parser.add_argument("--min-available-years", type=int, default=10)
+    parser.add_argument("--start-year", type=int, default=1988)
+    parser.add_argument("--end-year", type=int, default=None)
+    parser.add_argument("--refresh-availability", action="store_true")
     return parser.parse_args()
 
 
@@ -196,6 +247,11 @@ def main() -> int:
         workers=args.workers,
         chunk_rows=args.chunk_rows,
         memory_limit_gb=args.memory_limit_gb,
+        country_sample=args.country_sample,
+        min_available_years=args.min_available_years,
+        start_year=args.start_year,
+        end_year=args.end_year,
+        refresh_availability=args.refresh_availability,
     )
     return 0
 

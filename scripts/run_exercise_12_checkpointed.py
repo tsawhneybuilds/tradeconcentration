@@ -10,6 +10,7 @@ raw Comtrade file and can resume from those checkpoints.
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import re
 import shutil
@@ -24,7 +25,10 @@ from trade_concentration_pipeline import (
     EX12_TABLES,
     RESULTS,
     add_country_metadata,
+    active_sample_name,
     assign_size_states,
+    configure_country_sample,
+    drop_excluded_hs6,
     ensure_dirs,
     exercise_12_export_aggregates_for_leaf,
     extract_leaf_trade,
@@ -36,15 +40,47 @@ from trade_concentration_pipeline import (
     product_scope_states,
     read_comtrade_file,
     save_country_panel,
+    sample_processed_dir,
+    sample_results_dir,
     transition_matrix,
     write_exercise_12_memo,
     write_json,
 )
 
 
-PARTIAL_DIR = DATA_PROCESSED / "exercise_12_file_aggregates"
-AGGREGATE_PARQUET = DATA_PROCESSED / "exercise_12_export_aggregates.parquet"
-DECOMPOSITION_PARQUET = DATA_PROCESSED / "exercise_12_growth_decomposition.parquet"
+BASE_PARTIAL_DIR = DATA_PROCESSED / "exercise_12_file_aggregates"
+PARTIAL_DIR = BASE_PARTIAL_DIR
+BASE_AGGREGATE_PARQUET = DATA_PROCESSED / "exercise_12_export_aggregates.parquet"
+BASE_DECOMPOSITION_PARQUET = DATA_PROCESSED / "exercise_12_growth_decomposition.parquet"
+AGGREGATE_PARQUET = BASE_AGGREGATE_PARQUET
+DECOMPOSITION_PARQUET = BASE_DECOMPOSITION_PARQUET
+
+
+def configure_runner_sample(args: argparse.Namespace) -> None:
+    configure_country_sample(
+        country_sample=args.country_sample,
+        min_available_years=args.min_available_years,
+        start_year=args.start_year,
+        end_year=args.end_year,
+        refresh_availability=args.refresh_availability,
+    )
+    global PARTIAL_DIR
+    global AGGREGATE_PARQUET
+    global DECOMPOSITION_PARQUET
+    global EX12_TABLES
+    global EX12_FIGURES
+    results_base = sample_results_dir(args.country_sample)
+    EX12_TABLES = results_base / "exercise_12_tables"
+    EX12_FIGURES = results_base / "exercise_12_figures"
+    if args.country_sample == "prof_p_33":
+        PARTIAL_DIR = BASE_PARTIAL_DIR
+        AGGREGATE_PARQUET = BASE_AGGREGATE_PARQUET
+        DECOMPOSITION_PARQUET = BASE_DECOMPOSITION_PARQUET
+    else:
+        base = sample_processed_dir(args.country_sample)
+        PARTIAL_DIR = base / "exercise_12_file_aggregates"
+        AGGREGATE_PARQUET = base / "exercise_12_export_aggregates.parquet"
+        DECOMPOSITION_PARQUET = base / "exercise_12_growth_decomposition.parquet"
 
 
 def output_path_for_raw(path: Path) -> Path:
@@ -70,7 +106,7 @@ def standardize_aggregate_frame(df: pd.DataFrame) -> pd.DataFrame:
     out["trade_value"] = pd.to_numeric(out["trade_value"], errors="coerce")
     out["dimension"] = out["dimension"].astype("string")
     out = out.dropna(subset=["reporter_code", "year", "trade_value", "dimension"])
-    return out
+    return drop_excluded_hs6(out)
 
 
 def write_partials(max_files: int | None, fresh: bool) -> list[Path]:
@@ -93,26 +129,31 @@ def write_partials(max_files: int | None, fresh: bool) -> list[Path]:
             continue
 
         print(f"[{idx}/{len(files)}] aggregate Exercise 12 from {path.name}", flush=True)
-        leaf = extract_leaf_trade(read_comtrade_file(path))
+        raw = read_comtrade_file(path)
+        leaf = extract_leaf_trade(raw)
         frames, _product_partner = exercise_12_export_aggregates_for_leaf(leaf)
         if frames:
             aggregate = standardize_aggregate_frame(pd.concat(frames.values(), ignore_index=True))
         else:
             aggregate = standardize_aggregate_frame(pd.DataFrame())
         aggregate.to_parquet(partial, index=False)
+        rows = int(len(aggregate))
         manifest_rows.append(
             {
                 "raw_file": path.name,
                 "partial_file": partial.name,
                 "status": "written",
-                "rows": int(len(aggregate)),
+                "rows": rows,
             }
         )
+        del raw, leaf, frames, _product_partner, aggregate
+        gc.collect()
         write_json(
             RESULTS / "run_manifest_exercise_12_checkpointed_partials.json",
             {
                 "created_at_utc": now_utc(),
                 "mode": "exercise_12_checkpointed_partials",
+                "country_sample": active_sample_name(),
                 "raw_files_seen": len(files),
                 "raw_files_attempted": idx,
                 "partials_present": len(list(PARTIAL_DIR.glob("*.parquet"))),
@@ -153,6 +194,9 @@ def write_combined_aggregate_parquet(partials: list[Path]) -> int:
             if writer is None:
                 writer = pq.ParquetWriter(AGGREGATE_PARQUET, schema=schema)
             writer.write_table(table)
+            del df, table
+            if idx % 25 == 0:
+                gc.collect()
             if idx % 50 == 0 or idx == len(partials):
                 print(f"combined {idx}/{len(partials)} Exercise 12 partials", flush=True)
     finally:
@@ -169,6 +213,7 @@ def read_reporter_values(partials: list[Path], reporter_code: int) -> pd.DataFra
         frame = pd.read_parquet(partial)
         if not frame.empty:
             frames.append(standardize_aggregate_frame(frame))
+        del frame
     return pd.concat(frames, ignore_index=True) if frames else standardize_aggregate_frame(pd.DataFrame())
 
 
@@ -203,11 +248,14 @@ def finalize(partials: list[Path], source_details: dict) -> None:
         print(f"finalizing Exercise 12 reporter {idx}/{len(reporter_codes)}: {reporter_code}", flush=True)
         values = read_reporter_values(partials, reporter_code)
         if values.empty:
+            del values
+            gc.collect()
             continue
 
         for dimension in ["product", "partner", "product_partner_cell"]:
             dimension_values = prepare_dimension_values(values, dimension)
             if dimension_values.empty:
+                del dimension_values
                 continue
             decomposition = growth_decomposition(dimension_values, dimension, horizons)
             if not decomposition.empty:
@@ -220,6 +268,7 @@ def finalize(partials: list[Path], source_details: dict) -> None:
             )
             if not states.empty:
                 size_transition_rows.append(states)
+            del decomposition, dimension_values, states
 
         product_partner = prepare_dimension_values(values, "product_partner_cell")
         if not product_partner.empty:
@@ -231,6 +280,10 @@ def finalize(partials: list[Path], source_details: dict) -> None:
                     scope_transition = transition_matrix(scope, ["cmd_code"], state_col, horizons)
                     if not scope_transition.empty:
                         scope_transition_rows.append(scope_transition)
+                    del scope_transition
+            del scope
+        del values, product_partner
+        gc.collect()
 
     decomposition = pd.concat(decomposition_rows, ignore_index=True) if decomposition_rows else pd.DataFrame()
     if not decomposition.empty:
@@ -265,6 +318,7 @@ def finalize(partials: list[Path], source_details: dict) -> None:
         {
             "created_at_utc": now_utc(),
             "mode": "exercise_12_checkpointed",
+            "country_sample": source_details.get("country_sample"),
             "hs_bulk_files_processed": len(partials),
             "partial_files": len(list(PARTIAL_DIR.glob("*.parquet"))),
             "combined_aggregate_rows": int(total_aggregate_rows),
@@ -281,11 +335,17 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--max-files", type=int, default=None)
     parser.add_argument("--fresh", action="store_true", help="Delete existing per-file Exercise 12 checkpoints first.")
     parser.add_argument("--finalize-only", action="store_true", help="Skip raw processing and finalize from existing checkpoints.")
+    parser.add_argument("--country-sample", choices=["prof_p_33", "world_broad"], default="prof_p_33")
+    parser.add_argument("--min-available-years", type=int, default=10)
+    parser.add_argument("--start-year", type=int, default=1988)
+    parser.add_argument("--end-year", type=int, default=None)
+    parser.add_argument("--refresh-availability", action="store_true")
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
+    configure_runner_sample(args)
     ensure_dirs()
     save_country_panel()
     PARTIAL_DIR.mkdir(parents=True, exist_ok=True)
@@ -297,6 +357,7 @@ def main(argv: list[str] | None = None) -> int:
         raise RuntimeError("No Exercise 12 partial aggregate files found.")
     source_details = {
         "mode": "checkpointed",
+        "country_sample": args.country_sample,
         "hs_bulk_files_processed": len(partials),
         "partial_dir": str(PARTIAL_DIR.relative_to(RESULTS.parent)),
     }

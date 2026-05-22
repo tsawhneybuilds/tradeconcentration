@@ -1,6 +1,6 @@
 # Exercise 1: Aggregate Persistence
 
-Generated: 2026-05-18T08:50:47+00:00
+Generated: 2026-05-22T08:48:03+00:00
 
 This memo is intentionally descriptive. `exercises.md` should only be updated after discussion.
 
@@ -14,15 +14,15 @@ This memo is intentionally descriptive. `exercises.md` should only be updated af
 
 | flow    |   product_gini |   partner_gini |   product_partner_cell_gini |
 |:--------|---------------:|---------------:|----------------------------:|
-| Exports |          0.91  |          0.897 |                       0.95  |
-| Imports |          0.859 |          0.901 |                       0.943 |
+| Exports |          0.907 |          0.897 |                       0.949 |
+| Imports |          0.854 |          0.901 |                       0.94  |
 
 ## Median Concentration In Latest Available Year (2025)
 
 | flow    |   product_gini |   partner_gini |
 |:--------|---------------:|---------------:|
-| Exports |           0.93 |          0.905 |
-| Imports |           0.88 |          0.906 |
+| Exports |          0.926 |          0.901 |
+| Imports |          0.879 |          0.905 |
 
 ## Files
 

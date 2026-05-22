@@ -1,6 +1,6 @@
 # Exercise 3 BEC5 Research-Bin Mapping Decisions
 
-Generated: 2026-05-19T03:56:08+00:00
+Generated: 2026-05-22T12:34:38+00:00
 
 This memo documents the mapping decisions used to turn official HS-to-BEC and BEC5 end-use information into the Exercise 3 research bins. It is descriptive and does not update `exercises.md`.
 
@@ -39,7 +39,7 @@ The mapping is official where the official BEC5 end-use is decisive. When the of
 | intermediates         |          22075 |
 | final_consumption     |           9107 |
 | capital_goods         |           4510 |
-| unmapped_or_ambiguous |            705 |
+| unmapped_or_ambiguous |            698 |
 | energy                |            210 |
 
 ## Rows Reclassified By Description Rule
@@ -79,9 +79,9 @@ Three robustness mappings were written:
 
 |   intermediates |   final_consumption |   capital_goods |   unmapped_or_ambiguous |   energy | sensitivity        |
 |----------------:|--------------------:|----------------:|------------------------:|---------:|:-------------------|
-|           22075 |                9107 |            4912 |                     303 |      210 | capital_bound      |
-|           22585 |                9107 |            4510 |                     195 |      210 | intermediate_bound |
-|           22075 |                9107 |            4510 |                     548 |      367 | broad_energy_bound |
+|           22075 |                9107 |            4912 |                     296 |      210 | capital_bound      |
+|           22585 |                9107 |            4510 |                     188 |      210 | intermediate_bound |
+|           22075 |                9107 |            4510 |                     541 |      367 | broad_energy_bound |
 
 ## Files
 
