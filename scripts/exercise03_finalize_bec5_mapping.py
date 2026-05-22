@@ -32,6 +32,7 @@ DECISION_MEMO = RESULTS / "exercise_03_bec5_mapping_decisions.md"
 
 HS_CLASSES = ["H0", "H1", "H2", "H3", "H4", "H5", "H6"]
 HS_REFERENCE_URL = "https://comtradeapi.un.org/files/v1/app/reference/{code}.json"
+EXCLUDED_HS6_CODES = {"999999"}
 
 
 def now_utc() -> str:
@@ -45,6 +46,12 @@ def normalize_code(value: object, digits: int = 6) -> str:
     if not match:
         return ""
     return match.group(0).zfill(digits)
+
+
+def drop_excluded_hs6(df: pd.DataFrame, code_col: str = "cmd_code") -> pd.DataFrame:
+    if df.empty or code_col not in df.columns:
+        return df
+    return df.loc[~df[code_col].map(normalize_code).isin(EXCLUDED_HS6_CODES)].copy()
 
 
 def clean_desc(text: object) -> str:
@@ -353,6 +360,7 @@ def main() -> int:
     candidate = candidate.drop(columns=["hs_desc_official"], errors="ignore").merge(
         desc, on=["classification_code", "cmd_code"], how="left"
     )
+    candidate = drop_excluded_hs6(candidate)
     candidate["hs_desc_official"] = candidate["hs_desc_official"].fillna("")
 
     main_candidate, changes = apply_main_rules(candidate)

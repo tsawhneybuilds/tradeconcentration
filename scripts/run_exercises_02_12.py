@@ -33,6 +33,8 @@ from trade_concentration_pipeline import (
     add_country_metadata,
     assign_size_states,
     attach_inferred_classification_code,
+    configure_country_sample,
+    drop_excluded_hs6,
     ensure_dirs,
     exercise_12_accounting_outputs_for_values,
     exercise_02_panel_rows_for_leaf,
@@ -49,15 +51,21 @@ from trade_concentration_pipeline import (
     read_comtrade_file,
     run_exercise_02_from_panel,
     save_country_panel,
+    sample_processed_dir,
+    sample_processed_path,
+    sample_results_dir,
     transition_matrix,
     write_exercise_12_memo,
     write_json,
 )
 
 
-PARTIAL_DIR = DATA_PROCESSED / "exercise_02_12_file_aggregates"
-EX12_AGGREGATE_PARQUET = DATA_PROCESSED / "exercise_12_export_aggregates.parquet"
-EX12_DECOMPOSITION_PARQUET = DATA_PROCESSED / "exercise_12_growth_decomposition.parquet"
+BASE_PARTIAL_DIR = DATA_PROCESSED / "exercise_02_12_file_aggregates"
+PARTIAL_DIR = BASE_PARTIAL_DIR
+BASE_EX12_AGGREGATE_PARQUET = DATA_PROCESSED / "exercise_12_export_aggregates.parquet"
+BASE_EX12_DECOMPOSITION_PARQUET = DATA_PROCESSED / "exercise_12_growth_decomposition.parquet"
+EX12_AGGREGATE_PARQUET = BASE_EX12_AGGREGATE_PARQUET
+EX12_DECOMPOSITION_PARQUET = BASE_EX12_DECOMPOSITION_PARQUET
 PARTIAL_COLUMNS = ["reporter_code", "year", "flow", "classification_code", "dimension", "cmd_code", "partner_code", "hs2", "trade_value"]
 DIMENSIONS = ("product", "partner", "product_partner_cell")
 FAST_READ_CANDIDATES = (
@@ -75,6 +83,33 @@ FAST_READ_FLOW_CANDIDATES = (
     ["flowCode", "Trade Flow Code"],
     ["flowDesc", "Trade Flow"],
 )
+
+
+def configure_runner_sample(args: argparse.Namespace) -> None:
+    configure_country_sample(
+        country_sample=args.country_sample,
+        min_available_years=args.min_available_years,
+        start_year=args.start_year,
+        end_year=args.end_year,
+        refresh_availability=args.refresh_availability,
+    )
+    global PARTIAL_DIR
+    global EX12_AGGREGATE_PARQUET
+    global EX12_DECOMPOSITION_PARQUET
+    global EX12_TABLES
+    global EX12_FIGURES
+    results_base = sample_results_dir(args.country_sample)
+    EX12_TABLES = results_base / "exercise_12_tables"
+    EX12_FIGURES = results_base / "exercise_12_figures"
+    if args.country_sample == "prof_p_33":
+        PARTIAL_DIR = BASE_PARTIAL_DIR
+        EX12_AGGREGATE_PARQUET = BASE_EX12_AGGREGATE_PARQUET
+        EX12_DECOMPOSITION_PARQUET = BASE_EX12_DECOMPOSITION_PARQUET
+    else:
+        base = sample_processed_dir(args.country_sample)
+        PARTIAL_DIR = base / "exercise_02_12_file_aggregates"
+        EX12_AGGREGATE_PARQUET = base / "exercise_12_export_aggregates.parquet"
+        EX12_DECOMPOSITION_PARQUET = base / "exercise_12_growth_decomposition.parquet"
 
 
 def import_duckdb():
@@ -196,13 +231,14 @@ def standardize_aggregate_frame(df: pd.DataFrame) -> pd.DataFrame:
     out["hs2"] = out["hs2"].astype("string")
     out["trade_value"] = pd.to_numeric(out["trade_value"], errors="coerce")
     out = out.dropna(subset=["reporter_code", "year", "flow", "dimension", "trade_value"])
-    return out
+    return drop_excluded_hs6(out)
 
 
 def aggregate_leaf_for_exercises_02_12(leaf: pd.DataFrame) -> pd.DataFrame:
     if leaf.empty:
         return empty_aggregate_frame()
     leaf = leaf[leaf["flow"] == "Exports"].copy()
+    leaf = drop_excluded_hs6(leaf)
     if leaf.empty:
         return empty_aggregate_frame()
 
@@ -356,6 +392,7 @@ def create_grouped_view(con, partials: list[Path]) -> None:
             SUM(CAST(trade_value AS DOUBLE)) AS trade_value
         FROM read_parquet({parquet_list_sql(partials)}, union_by_name=true)
         WHERE trade_value IS NOT NULL
+          AND (cmd_code IS NULL OR CAST(cmd_code AS VARCHAR) <> '999999')
         GROUP BY 1, 2, 3, 4, 5, 6, 7, 8
         """
     )
@@ -800,6 +837,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--fresh", action="store_true", help="Delete only the Exercise 2+12 aggregate cache first.")
     parser.add_argument("--finalize-only", action="store_true", help="Skip raw parsing and finalize from existing checkpoints.")
     parser.add_argument("--validate-against-legacy", type=int, default=None)
+    parser.add_argument("--country-sample", choices=["prof_p_33", "world_broad"], default="prof_p_33")
+    parser.add_argument("--min-available-years", type=int, default=10)
+    parser.add_argument("--start-year", type=int, default=1988)
+    parser.add_argument("--end-year", type=int, default=None)
+    parser.add_argument("--refresh-availability", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -807,6 +849,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv or sys.argv[1:])
     max_files = args.max_files if args.max_files is not None else args.legacy_max_files
     workers = max(1, int(args.workers))
+    configure_runner_sample(args)
 
     if args.validate_against_legacy is not None:
         validate_against_legacy(max_files=int(args.validate_against_legacy), workers=workers)
@@ -840,6 +883,7 @@ def main(argv: list[str] | None = None) -> int:
     source_details = {
         "mode": "exercises_02_12_duckdb_checkpointed",
         "dependency_engine": "duckdb",
+        "country_sample": args.country_sample,
         "partial_dir": str(PARTIAL_DIR.relative_to(RESULTS.parent)),
         "partial_files_used": len(partials),
         "workers": workers,
@@ -853,6 +897,7 @@ def main(argv: list[str] | None = None) -> int:
         "created_at_utc": now_utc(),
         "mode": "exercises_02_12_duckdb_checkpointed",
         "dependency_engine": "duckdb",
+        "country_sample": args.country_sample,
         "workers": workers,
         "debug_run": debug_run,
         "canonical_outputs_written": True,
@@ -864,7 +909,7 @@ def main(argv: list[str] | None = None) -> int:
         "strict_exercise_10_preserved": True,
         "exercises_md_updated": False,
         "processed_outputs": {
-            "exercise_02": str((DATA_PROCESSED / "exercise_02_bucket_growth_panel.parquet").relative_to(RESULTS.parent)),
+            "exercise_02": str(sample_processed_path("exercise_02_bucket_growth_panel.parquet").relative_to(RESULTS.parent)),
             "exercise_12": str(EX12_DECOMPOSITION_PARQUET.relative_to(RESULTS.parent)),
         },
     }

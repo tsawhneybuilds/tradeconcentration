@@ -33,15 +33,18 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from trade_concentration_pipeline import (
-    DATA_PROCESSED,
     EX10_FIGURES,
     EX10_TABLES,
     RESULTS,
+    configure_country_sample,
+    drop_excluded_hs6,
     extract_leaf_trade,
     gini,
     hs_bulk_files,
     read_comtrade_file,
     save_country_panel,
+    sample_processed_path,
+    sample_results_dir,
     top_share,
 )
 
@@ -113,12 +116,12 @@ def benchmark_paths(output_tag: str | None) -> BenchmarkPaths:
             partial_csv=EX10_TABLES / "random_benchmark_hs2_product_all_years.partial.csv",
             final_csv=EX10_TABLES / "random_benchmark_all_years.csv",
             hs2_csv=EX10_TABLES / "random_benchmark_hs2_product_all_years.csv",
-            parquet=DATA_PROCESSED / "random_benchmark_all_years.parquet",
-            hs2_parquet=DATA_PROCESSED / "random_benchmark_hs2_product_all_years.parquet",
+            parquet=sample_processed_path("random_benchmark_all_years.parquet"),
+            hs2_parquet=sample_processed_path("random_benchmark_hs2_product_all_years.parquet"),
             actual_csv=EX10_TABLES / "actual_concentration_inputs.csv",
-            memo=RESULTS / "exercise_10_random_benchmark.md",
+            memo=sample_results_dir() / "exercise_10_random_benchmark.md",
             validation_json=EX10_TABLES / "benchmark_validation.json",
-            manifest_json=RESULTS / "run_manifest_exercise_10_hs2.json",
+            manifest_json=sample_results_dir() / "run_manifest_exercise_10_hs2.json",
             figure_dir=EX10_FIGURES,
         )
 
@@ -126,12 +129,12 @@ def benchmark_paths(output_tag: str | None) -> BenchmarkPaths:
         partial_csv=EX10_TABLES / f"random_benchmark_hs2_product_{tag}_all_years.partial.csv",
         final_csv=EX10_TABLES / f"random_benchmark_{tag}_all_years.csv",
         hs2_csv=EX10_TABLES / f"random_benchmark_hs2_product_{tag}_all_years.csv",
-        parquet=DATA_PROCESSED / f"random_benchmark_{tag}_all_years.parquet",
-        hs2_parquet=DATA_PROCESSED / f"random_benchmark_hs2_product_{tag}_all_years.parquet",
+        parquet=sample_processed_path(f"random_benchmark_{tag}_all_years.parquet"),
+        hs2_parquet=sample_processed_path(f"random_benchmark_hs2_product_{tag}_all_years.parquet"),
         actual_csv=EX10_TABLES / f"actual_concentration_inputs_{tag}.csv",
-        memo=RESULTS / f"exercise_10_random_benchmark_{tag}.md",
+        memo=sample_results_dir() / f"exercise_10_random_benchmark_{tag}.md",
         validation_json=EX10_TABLES / f"benchmark_validation_{tag}.json",
-        manifest_json=RESULTS / f"run_manifest_exercise_10_hs2_{tag}.json",
+        manifest_json=sample_results_dir() / f"run_manifest_exercise_10_hs2_{tag}.json",
         figure_dir=EX10_FIGURES / tag,
     )
 
@@ -153,11 +156,11 @@ def write_json(path: Path, obj: object) -> None:
 
 def backup_active_count_outputs() -> None:
     backups = [
-        (DATA_PROCESSED / "random_benchmark_all_years.parquet", DATA_PROCESSED / "random_benchmark_active_count_null_all_years.parquet"),
+        (sample_processed_path("random_benchmark_all_years.parquet"), sample_processed_path("random_benchmark_active_count_null_all_years.parquet")),
         (EX10_TABLES / "random_benchmark_all_years.csv", EX10_TABLES / "random_benchmark_active_count_null_all_years.csv"),
         (EX10_TABLES / "actual_concentration_inputs.csv", EX10_TABLES / "actual_concentration_inputs_active_count_null.csv"),
         (EX10_TABLES / "benchmark_validation.json", EX10_TABLES / "benchmark_validation_active_count_null.json"),
-        (RESULTS / "exercise_10_random_benchmark.md", RESULTS / "exercise_10_random_benchmark_active_count_null.md"),
+        (sample_results_dir() / "exercise_10_random_benchmark.md", sample_results_dir() / "exercise_10_random_benchmark_active_count_null.md"),
     ]
     for src, dst in backups:
         if src.exists() and not dst.exists():
@@ -290,6 +293,7 @@ def collect_and_simulate(
     for idx, path in enumerate(files, start=1):
         print(f"[{idx}/{len(files)}] HS2-preserving Exercise 10 from {path.name}", flush=True)
         leaf = extract_leaf_trade(read_comtrade_file(path))
+        leaf = drop_excluded_hs6(leaf)
         if leaf.empty:
             continue
         if excluded_hs2:
@@ -556,11 +560,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--exclude-hs2", nargs="*", default=[], help="HS2 chapters to remove before running the benchmark, e.g. --exclude-hs2 87.")
     parser.add_argument("--output-tag", default=None, help="Output tag for variant files. Defaults to no_hs<codes> when exclusions are used.")
     parser.add_argument("--write-main", action="store_true", help="Also publish this variant to the canonical Exercise 10 output files.")
+    parser.add_argument("--country-sample", choices=["prof_p_33", "world_broad"], default="prof_p_33")
+    parser.add_argument("--min-available-years", type=int, default=10)
+    parser.add_argument("--start-year", type=int, default=1988)
+    parser.add_argument("--end-year", type=int, default=None)
+    parser.add_argument("--refresh-availability", action="store_true")
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    configure_country_sample(
+        country_sample=args.country_sample,
+        min_available_years=args.min_available_years,
+        start_year=args.start_year,
+        end_year=args.end_year,
+        refresh_availability=args.refresh_availability,
+    )
+    global EX10_TABLES
+    global EX10_FIGURES
+    result_base = sample_results_dir(args.country_sample)
+    EX10_TABLES = result_base / "exercise_10_tables"
+    EX10_FIGURES = result_base / "exercise_10_figures"
     backup_active_count_outputs()
     excluded_hs2 = normalize_hs2_codes(args.exclude_hs2)
     output_tag = safe_tag(args.output_tag) or default_output_tag(excluded_hs2)

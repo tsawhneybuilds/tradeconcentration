@@ -27,6 +27,7 @@ from trade_concentration_pipeline import (  # noqa: E402
     RESULTS,
     checkpoint_name_for_raw,
     compute_exercise_06_outputs_for_leaf,
+    configure_country_sample,
     ensure_dirs,
     extract_leaf_trade,
     hs_bulk_files,
@@ -34,14 +35,47 @@ from trade_concentration_pipeline import (  # noqa: E402
     now_utc,
     read_comtrade_file,
     save_country_panel,
+    sample_processed_dir,
+    sample_processed_path,
+    sample_results_dir,
     write_exercise_06_memo,
     write_json,
 )
 
-PARTIAL_DIR = DATA_PROCESSED / "exercise_06_file_aggregates"
+BASE_PARTIAL_DIR = DATA_PROCESSED / "exercise_06_file_aggregates"
+PARTIAL_DIR = BASE_PARTIAL_DIR
 EXCLUSIONS_PARTIAL_DIR = PARTIAL_DIR / "exclusions"
 REMOVED_PARTIAL_DIR = PARTIAL_DIR / "removed_categories"
 DONE_DIR = PARTIAL_DIR / "done"
+
+
+def set_partial_dirs(country_sample: str) -> None:
+    global PARTIAL_DIR
+    global EXCLUSIONS_PARTIAL_DIR
+    global REMOVED_PARTIAL_DIR
+    global DONE_DIR
+    PARTIAL_DIR = BASE_PARTIAL_DIR if country_sample == "prof_p_33" else sample_processed_dir(country_sample) / "exercise_06_file_aggregates"
+    EXCLUSIONS_PARTIAL_DIR = PARTIAL_DIR / "exclusions"
+    REMOVED_PARTIAL_DIR = PARTIAL_DIR / "removed_categories"
+    DONE_DIR = PARTIAL_DIR / "done"
+
+
+def configure_runner_sample(args: argparse.Namespace) -> dict:
+    config = {
+        "country_sample": args.country_sample,
+        "min_available_years": args.min_available_years,
+        "start_year": args.start_year,
+        "end_year": args.end_year,
+        "refresh_availability": args.refresh_availability,
+    }
+    configure_country_sample(**config)
+    global EX06_TABLES
+    global EX06_FIGURES
+    results_base = sample_results_dir(args.country_sample)
+    EX06_TABLES = results_base / "exercise_06_tables"
+    EX06_FIGURES = results_base / "exercise_06_figures"
+    set_partial_dirs(args.country_sample)
+    return {**config, "refresh_availability": False}
 
 
 def partial_name_for_raw(path: Path) -> str:
@@ -55,7 +89,9 @@ def atomic_write_csv(df: pd.DataFrame, destination: Path) -> None:
     tmp.replace(destination)
 
 
-def process_file(path_text: str) -> dict:
+def process_file(path_text: str, sample_config: dict) -> dict:
+    configure_country_sample(**sample_config)
+    set_partial_dirs(sample_config["country_sample"])
     path = Path(path_text)
     partial_name = partial_name_for_raw(path)
     out_path = EXCLUSIONS_PARTIAL_DIR / partial_name
@@ -104,7 +140,7 @@ def read_partials(paths: list[Path]) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
-def finalize(files_seen: int, workers: int) -> None:
+def finalize(files_seen: int, workers: int, country_sample: str) -> None:
     exclusion_partials = sorted(EXCLUSIONS_PARTIAL_DIR.glob("*.csv"))
     if not exclusion_partials:
         raise RuntimeError(f"No Exercise 6 exclusion partials found in {EXCLUSIONS_PARTIAL_DIR}")
@@ -113,9 +149,9 @@ def finalize(files_seen: int, workers: int) -> None:
     exclusions.to_csv(EX06_TABLES / "concentration_exclusions_all_years.csv", index=False)
 
     parquet_error = None
-    parquet_error_path = DATA_PROCESSED / "concentration_exclusions_all_years.parquet.error.txt"
+    parquet_error_path = sample_processed_path("concentration_exclusions_all_years.parquet.error.txt")
     try:
-        exclusions.to_parquet(DATA_PROCESSED / "concentration_exclusions_all_years.parquet", index=False)
+        exclusions.to_parquet(sample_processed_path("concentration_exclusions_all_years.parquet"), index=False)
         if parquet_error_path.exists():
             parquet_error_path.unlink()
     except Exception as exc:
@@ -134,6 +170,7 @@ def finalize(files_seen: int, workers: int) -> None:
         {
             "created_at_utc": now_utc(),
             "mode": "exercise_06_raw_checkpoints",
+            "country_sample": country_sample,
             "workers": workers,
             "raw_files_seen": files_seen,
             "partials_exclusions": len(exclusion_partials),
@@ -153,11 +190,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-files", type=int, default=None)
     parser.add_argument("--finalize-only", action="store_true")
     parser.add_argument("--fresh", action="store_true", help="Remove existing Exercise 6 partials before processing.")
+    parser.add_argument("--country-sample", choices=["prof_p_33", "world_broad"], default="prof_p_33")
+    parser.add_argument("--min-available-years", type=int, default=10)
+    parser.add_argument("--start-year", type=int, default=1988)
+    parser.add_argument("--end-year", type=int, default=None)
+    parser.add_argument("--refresh-availability", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    sample_config = configure_runner_sample(args)
     ensure_dirs()
     for path in [EXCLUSIONS_PARTIAL_DIR, REMOVED_PARTIAL_DIR, DONE_DIR]:
         path.mkdir(parents=True, exist_ok=True)
@@ -172,7 +215,7 @@ def main() -> int:
 
     if not args.finalize_only:
         with ProcessPoolExecutor(max_workers=args.workers) as executor:
-            futures = {executor.submit(process_file, str(path)): path for path in files}
+            futures = {executor.submit(process_file, str(path), sample_config): path for path in files}
             for completed, future in enumerate(as_completed(futures), start=1):
                 result = future.result()
                 print(
@@ -181,7 +224,7 @@ def main() -> int:
                     flush=True,
                 )
 
-    finalize(files_seen=len(files), workers=args.workers)
+    finalize(files_seen=len(files), workers=args.workers, country_sample=args.country_sample)
     return 0
 
 

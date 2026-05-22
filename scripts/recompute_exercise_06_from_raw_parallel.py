@@ -20,10 +20,10 @@ if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 
 from trade_concentration_pipeline import (  # noqa: E402
-    DATA_PROCESSED,
     EX06_TABLES,
     RESULTS,
     compute_exercise_06_outputs_for_leaf,
+    configure_country_sample,
     ensure_dirs,
     extract_leaf_trade,
     hs_bulk_files,
@@ -31,12 +31,15 @@ from trade_concentration_pipeline import (  # noqa: E402
     now_utc,
     read_comtrade_file,
     save_country_panel,
+    sample_processed_path,
+    sample_results_dir,
     write_exercise_06_memo,
     write_json,
 )
 
 
-def process_file(path_text: str) -> tuple[str, int, list[pd.DataFrame], list[pd.DataFrame]]:
+def process_file(path_text: str, sample_config: dict) -> tuple[str, int, list[pd.DataFrame], list[pd.DataFrame]]:
+    configure_country_sample(**sample_config)
     path = Path(path_text)
     raw = read_comtrade_file(path)
     leaf = extract_leaf_trade(raw)
@@ -51,11 +54,27 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Parallel raw Comtrade rerun for Exercise 6.")
     parser.add_argument("--workers", type=int, default=min(6, os.cpu_count() or 1))
     parser.add_argument("--max-files", type=int, default=None)
+    parser.add_argument("--country-sample", choices=["prof_p_33", "world_broad"], default="prof_p_33")
+    parser.add_argument("--min-available-years", type=int, default=10)
+    parser.add_argument("--start-year", type=int, default=1988)
+    parser.add_argument("--end-year", type=int, default=None)
+    parser.add_argument("--refresh-availability", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    sample_config = {
+        "country_sample": args.country_sample,
+        "min_available_years": args.min_available_years,
+        "start_year": args.start_year,
+        "end_year": args.end_year,
+        "refresh_availability": args.refresh_availability,
+    }
+    configure_country_sample(**sample_config)
+    global EX06_TABLES
+    EX06_TABLES = sample_results_dir(args.country_sample) / "exercise_06_tables"
+    worker_sample_config = {**sample_config, "refresh_availability": False}
     ensure_dirs()
     files = hs_bulk_files(args.max_files)
     if not files:
@@ -66,7 +85,7 @@ def main() -> int:
     files_with_rows = 0
 
     with ProcessPoolExecutor(max_workers=args.workers) as executor:
-        futures = {executor.submit(process_file, str(path)): path for path in files}
+        futures = {executor.submit(process_file, str(path), worker_sample_config): path for path in files}
         completed = 0
         for future in as_completed(futures):
             completed += 1
@@ -86,10 +105,10 @@ def main() -> int:
     exclusions.to_csv(EX06_TABLES / "concentration_exclusions_all_years.csv", index=False)
     parquet_error = None
     try:
-        exclusions.to_parquet(DATA_PROCESSED / "concentration_exclusions_all_years.parquet", index=False)
+        exclusions.to_parquet(sample_processed_path("concentration_exclusions_all_years.parquet"), index=False)
     except Exception as exc:
         parquet_error = f"{type(exc).__name__}: {exc}"
-        (DATA_PROCESSED / "concentration_exclusions_all_years.parquet.error.txt").write_text(
+        sample_processed_path("concentration_exclusions_all_years.parquet.error.txt").write_text(
             parquet_error + "\n",
             encoding="utf-8",
         )
@@ -105,6 +124,7 @@ def main() -> int:
         {
             "created_at_utc": now_utc(),
             "mode": "exercise_06_raw_parallel",
+            "country_sample": args.country_sample,
             "workers": args.workers,
             "hs_bulk_files_seen": len(files),
             "hs_bulk_files_with_rows": files_with_rows,

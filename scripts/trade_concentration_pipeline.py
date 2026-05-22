@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import gc
 import gzip
+import hashlib
 import json
 import math
 import os
@@ -65,11 +66,15 @@ EX11_FIGURES = RESULTS / "exercise_11_figures"
 EX12_TABLES = RESULTS / "exercise_12_tables"
 EX12_FIGURES = RESULTS / "exercise_12_figures"
 OECD_ICIO_RAW = DATA_RAW / "oecd_icio"
-EX03_PARTIAL_DIR = DATA_PROCESSED / "exercise_03_file_aggregates"
+SAMPLE_PROCESSED_ROOT = DATA_PROCESSED / "samples"
+BASE_EX03_PARTIAL_DIR = DATA_PROCESSED / "exercise_03_file_aggregates"
+EX03_PARTIAL_DIR = BASE_EX03_PARTIAL_DIR
 EX03_PRODUCT_PARTIAL_DIR = EX03_PARTIAL_DIR / "product_values"
 EX03_COVERAGE_PARTIAL_DIR = EX03_PARTIAL_DIR / "mapping_coverage"
-EX04_PARTIAL_DIR = DATA_PROCESSED / "exercise_04_file_aggregates"
-EX11_PARTIAL_DIR = DATA_PROCESSED / "exercise_11_file_aggregates"
+BASE_EX04_PARTIAL_DIR = DATA_PROCESSED / "exercise_04_file_aggregates"
+EX04_PARTIAL_DIR = BASE_EX04_PARTIAL_DIR
+BASE_EX11_PARTIAL_DIR = DATA_PROCESSED / "exercise_11_file_aggregates"
+EX11_PARTIAL_DIR = BASE_EX11_PARTIAL_DIR
 EX11_IMPORT_PARTIAL_DIR = EX11_PARTIAL_DIR / "import_cells"
 EX11_EXPORT_PARTIAL_DIR = EX11_PARTIAL_DIR / "export_sectors"
 EX11_COVERAGE_PARTIAL_DIR = EX11_PARTIAL_DIR / "mapping_coverage"
@@ -97,6 +102,8 @@ EX10_TOP_METRICS = {
 }
 
 EX03_RESEARCH_BINS = ["energy", "intermediates", "capital_goods", "final_consumption"]
+EXCLUDED_HS6_CODES = {"999999"}
+EXCLUDED_HS6_LABELS = {"999999": "Commodities not specified"}
 
 DEFAULT_CHUNK_ROWS = int(os.getenv("TRADE_PIPELINE_CHUNK_ROWS", "500000"))
 
@@ -132,6 +139,15 @@ class Country:
     country: str
     iso3: str
     reporter_code: int
+
+
+@dataclass(frozen=True)
+class CountrySampleSettings:
+    name: str = "prof_p_33"
+    min_available_years: int = 10
+    start_year: int = 1988
+    end_year: int | None = None
+    refresh_availability: bool = False
 
 
 PROF_P_COUNTRIES = [
@@ -170,6 +186,13 @@ PROF_P_COUNTRIES = [
     Country("United States", "USA", 842),
 ]
 
+COUNTRY_SAMPLE_CHOICES = ("prof_p_33", "world_broad")
+PIPELINE_EXERCISES = ["1", "2", "3", "4", "6", "10", "11", "12"]
+COMTRADE_REPORTERS_URL = "https://comtradeapi.un.org/files/v1/app/reference/Reporters.json"
+COMTRADE_REPORTERS_PATH = COMTRADE_RAW / "reporters_reference.json"
+ACTIVE_COUNTRY_SAMPLE = CountrySampleSettings()
+_COUNTRY_SAMPLE_CACHE: dict[CountrySampleSettings, tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]] = {}
+
 FLOW_LABELS = {
     "X": "Exports",
     "M": "Imports",
@@ -178,6 +201,23 @@ FLOW_LABELS = {
     "2": "Exports",
     "1": "Imports",
 }
+
+
+def hs6_code_series(series: pd.Series) -> pd.Series:
+    return series.astype(str).str.extract(r"(\d{1,6})", expand=False).str.zfill(6)
+
+
+def excluded_hs6_mask(series: pd.Series) -> pd.Series:
+    return hs6_code_series(series).isin(EXCLUDED_HS6_CODES)
+
+
+def drop_excluded_hs6(df: pd.DataFrame, code_col: str = "cmd_code") -> pd.DataFrame:
+    if df.empty or code_col not in df.columns:
+        return df
+    mask = excluded_hs6_mask(df[code_col])
+    if not mask.any():
+        return df
+    return df.loc[~mask].copy()
 
 EXCLUSION_SETS = {
     "baseline": set(),
@@ -285,6 +325,212 @@ def write_text(path: Path, text: str) -> None:
     path.write_text(text, encoding="utf-8")
 
 
+def active_sample_name() -> str:
+    return ACTIVE_COUNTRY_SAMPLE.name
+
+
+def sample_processed_dir(sample_name: str | None = None) -> Path:
+    return SAMPLE_PROCESSED_ROOT / (sample_name or active_sample_name())
+
+
+def sample_processed_path(filename: str, sample_name: str | None = None) -> Path:
+    if (sample_name or active_sample_name()) == "prof_p_33":
+        return DATA_PROCESSED / filename
+    return sample_processed_dir(sample_name) / filename
+
+
+def sample_results_dir(sample_name: str | None = None) -> Path:
+    if (sample_name or active_sample_name()) == "prof_p_33":
+        return RESULTS
+    return RESULTS / "samples" / (sample_name or active_sample_name())
+
+
+def sample_availability_path(suffix: str, sample_name: str | None = None) -> Path:
+    return COMTRADE_AVAILABILITY / f"{sample_name or active_sample_name()}_{suffix}"
+
+
+def sample_completion_dir(sample_name: str | None = None) -> Path:
+    return sample_processed_dir(sample_name) / "completion"
+
+
+def exercise_completion_manifest_path(exercise: str, sample_name: str | None = None) -> Path:
+    return sample_completion_dir(sample_name) / f"exercise_{exercise}_complete.json"
+
+
+def file_is_available(path: Path) -> bool:
+    return path.exists() and path.stat().st_size > 0
+
+
+def exercise_output_paths(exercise: str) -> list[Path]:
+    paths = {
+        "1": [EX01_TABLES / "concentration_all_years.csv", sample_processed_path("concentration_all_years.parquet")],
+        "2": [EX02_TABLES / "bucket_growth_panel.csv", sample_processed_path("exercise_02_bucket_growth_panel.parquet")],
+        "3": [EX03_TABLES / "import_bin_concentration.csv", sample_processed_path("exercise_03_import_bin_concentration.parquet")],
+        "4": [EX04_TABLES / "dominant_supplier_importer_summary.csv", sample_processed_path("exercise_04_dominant_supplier_by_product.parquet")],
+        "6": [EX06_TABLES / "concentration_exclusions_all_years.csv", sample_processed_path("concentration_exclusions_all_years.parquet")],
+        "10": [EX10_TABLES / "random_benchmark_all_years.csv", sample_processed_path("random_benchmark_all_years.parquet")],
+        "11": [EX11_TABLES / "top_export_sector_input_exposure.csv", sample_processed_path("exercise_11_top_export_input_exposure.parquet")],
+        "12": [EX12_TABLES / "growth_decomposition.csv", sample_processed_path("exercise_12_growth_decomposition.parquet")],
+    }
+    if exercise == "all":
+        out: list[Path] = []
+        for key in PIPELINE_EXERCISES:
+            out.extend(paths[key])
+        return out
+    return paths.get(exercise, [])
+
+
+def completion_manifest_matches_sample(exercise: str) -> bool:
+    manifest = exercise_completion_manifest_path(exercise)
+    if not manifest.exists():
+        return False
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return False
+    return payload.get("country_sample") == active_sample_name()
+
+
+def exercise_outputs_available(exercise: str) -> bool:
+    outputs = exercise_output_paths(exercise)
+    if not outputs or not all(file_is_available(path) for path in outputs):
+        return False
+    if active_sample_name() == "prof_p_33":
+        return True
+    if exercise == "all":
+        return all(completion_manifest_matches_sample(key) for key in PIPELINE_EXERCISES)
+    return completion_manifest_matches_sample(exercise)
+
+
+def can_reuse_exercise_outputs(args: argparse.Namespace) -> bool:
+    return (
+        getattr(args, "max_files", None) is None
+        and not getattr(args, "reprocess_raw", False)
+        and not getattr(args, "fresh_checkpoints", False)
+        and not getattr(args, "finalize_only", False)
+    )
+
+
+def mark_exercise_outputs_complete(exercise: str, details: dict | None = None) -> None:
+    manifest = {
+        "created_at_utc": now_utc(),
+        "country_sample": active_sample_name(),
+        "sample_settings": ACTIVE_COUNTRY_SAMPLE.__dict__,
+        "exercise": exercise,
+        "outputs": [str(path.relative_to(ROOT)) for path in exercise_output_paths(exercise)],
+        "details": details or {},
+    }
+    write_json(exercise_completion_manifest_path(exercise), manifest)
+
+
+def mark_many_exercises_complete(exercises: Iterable[str], details: dict | None = None) -> None:
+    for exercise in exercises:
+        mark_exercise_outputs_complete(exercise, details=details)
+
+
+def configure_country_sample(
+    country_sample: str = "prof_p_33",
+    min_available_years: int = 10,
+    start_year: int = 1988,
+    end_year: int | None = None,
+    refresh_availability: bool = False,
+) -> CountrySampleSettings:
+    if country_sample not in COUNTRY_SAMPLE_CHOICES:
+        raise ValueError(f"Unsupported country sample `{country_sample}`. Choose from: {', '.join(COUNTRY_SAMPLE_CHOICES)}")
+    if min_available_years < 1:
+        raise ValueError("--min-available-years must be positive.")
+    if start_year < 1900:
+        raise ValueError("--start-year must be 1900 or later.")
+    if end_year is not None and end_year < start_year:
+        raise ValueError("--end-year must be greater than or equal to --start-year.")
+
+    global ACTIVE_COUNTRY_SAMPLE
+    ACTIVE_COUNTRY_SAMPLE = CountrySampleSettings(
+        name=country_sample,
+        min_available_years=int(min_available_years),
+        start_year=int(start_year),
+        end_year=int(end_year) if end_year is not None else None,
+        refresh_availability=bool(refresh_availability),
+    )
+    configure_sample_result_dirs()
+    configure_sample_partial_dirs()
+    return ACTIVE_COUNTRY_SAMPLE
+
+
+def configure_country_sample_from_args(args: argparse.Namespace) -> CountrySampleSettings:
+    return configure_country_sample(
+        country_sample=getattr(args, "country_sample", "prof_p_33"),
+        min_available_years=getattr(args, "min_available_years", 10),
+        start_year=getattr(args, "start_year", 1988),
+        end_year=getattr(args, "end_year", None),
+        refresh_availability=getattr(args, "refresh_availability", False),
+    )
+
+
+def configure_sample_result_dirs() -> None:
+    global EX01_TABLES
+    global EX01_FIGURES
+    global EX02_TABLES
+    global EX02_FIGURES
+    global EX03_TABLES
+    global EX03_FIGURES
+    global EX04_TABLES
+    global EX04_FIGURES
+    global EX06_TABLES
+    global EX06_FIGURES
+    global EX10_TABLES
+    global EX10_FIGURES
+    global EX11_TABLES
+    global EX11_FIGURES
+    global EX12_TABLES
+    global EX12_FIGURES
+
+    base = sample_results_dir()
+    EX01_TABLES = base / "exercise_01_tables"
+    EX01_FIGURES = base / "exercise_01_figures"
+    EX02_TABLES = base / "exercise_02_tables"
+    EX02_FIGURES = base / "exercise_02_figures"
+    EX03_TABLES = base / "exercise_03_tables"
+    EX03_FIGURES = base / "exercise_03_figures"
+    EX04_TABLES = base / "exercise_04_tables"
+    EX04_FIGURES = base / "exercise_04_figures"
+    EX06_TABLES = base / "exercise_06_tables"
+    EX06_FIGURES = base / "exercise_06_figures"
+    EX10_TABLES = base / "exercise_10_tables"
+    EX10_FIGURES = base / "exercise_10_figures"
+    EX11_TABLES = base / "exercise_11_tables"
+    EX11_FIGURES = base / "exercise_11_figures"
+    EX12_TABLES = base / "exercise_12_tables"
+    EX12_FIGURES = base / "exercise_12_figures"
+
+
+def configure_sample_partial_dirs() -> None:
+    global EX03_PARTIAL_DIR
+    global EX03_PRODUCT_PARTIAL_DIR
+    global EX03_COVERAGE_PARTIAL_DIR
+    global EX04_PARTIAL_DIR
+    global EX11_PARTIAL_DIR
+    global EX11_IMPORT_PARTIAL_DIR
+    global EX11_EXPORT_PARTIAL_DIR
+    global EX11_COVERAGE_PARTIAL_DIR
+
+    if active_sample_name() == "prof_p_33":
+        EX03_PARTIAL_DIR = BASE_EX03_PARTIAL_DIR
+        EX04_PARTIAL_DIR = BASE_EX04_PARTIAL_DIR
+        EX11_PARTIAL_DIR = BASE_EX11_PARTIAL_DIR
+    else:
+        checkpoint_root = sample_processed_dir() / "checkpoints"
+        EX03_PARTIAL_DIR = checkpoint_root / "exercise_03_file_aggregates"
+        EX04_PARTIAL_DIR = checkpoint_root / "exercise_04_file_aggregates"
+        EX11_PARTIAL_DIR = checkpoint_root / "exercise_11_file_aggregates"
+
+    EX03_PRODUCT_PARTIAL_DIR = EX03_PARTIAL_DIR / "product_values"
+    EX03_COVERAGE_PARTIAL_DIR = EX03_PARTIAL_DIR / "mapping_coverage"
+    EX11_IMPORT_PARTIAL_DIR = EX11_PARTIAL_DIR / "import_cells"
+    EX11_EXPORT_PARTIAL_DIR = EX11_PARTIAL_DIR / "export_sectors"
+    EX11_COVERAGE_PARTIAL_DIR = EX11_PARTIAL_DIR / "mapping_coverage"
+
+
 def get_key(args: argparse.Namespace) -> str | None:
     return args.subscription_key or os.getenv("COMTRADE_SUBSCRIPTION_KEY") or None
 
@@ -339,52 +585,99 @@ Details:
     write_text(RESULTS / "data_access_blocker.md", memo)
 
 
-def check_comtrade_access(subscription_key: str | None) -> bool:
-    if not subscription_key:
-        availability = download_public_availability_without_key()
-        details = {
-            "public_availability_rows_saved": int(len(availability)),
-            "public_availability_file": str((COMTRADE_AVAILABILITY / "prof_p_panel_public_availability.csv").relative_to(ROOT)),
-        }
-        write_blocker("No Comtrade subscription key found in COMTRADE_SUBSCRIPTION_KEY or --subscription-key.", details)
-        return False
-
-    if comtradeapicall is None:
-        write_blocker("Python package `comtradeapicall` is not installed.")
-        return False
-
-    try:
-        df = comtradeapicall.getFinalDataBulkAvailability(
-            subscription_key,
-            typeCode="C",
-            freqCode="A",
-            clCode="HS",
-            period=2001,
-            reporterCode=842,
-        )
-    except Exception as exc:  # pragma: no cover - depends on remote API
-        write_blocker("Comtrade access probe failed.", {"exception": repr(exc)})
-        return False
-
-    if df is None or len(df) == 0:
-        write_blocker(
-            "Comtrade access probe returned no data for US annual HS 2001 bulk availability.",
-            {"probe_reporter": 842, "probe_period": 2001},
-        )
-        return False
-
-    return True
+def prof_p_availability_path(kind: str) -> Path:
+    return COMTRADE_AVAILABILITY / f"prof_p_panel_{kind}.csv"
 
 
-def download_public_availability_without_key() -> pd.DataFrame:
-    """Save public Comtrade annual HS final-data availability metadata.
+def availability_path(kind: str, sample_name: str | None = None) -> Path:
+    sample = sample_name or active_sample_name()
+    if sample == "prof_p_33":
+        return prof_p_availability_path(kind)
+    return sample_availability_path(f"{kind}.csv", sample)
 
-    This does not provide the reporter-product-partner trade values needed for
-    the exercises. It only records which annual HS datasets appear available.
-    """
-    rows = []
+
+def standardize_availability_columns(df: pd.DataFrame) -> pd.DataFrame:
+    if df.empty:
+        return pd.DataFrame()
+    out = df.copy()
+    col_map = {normalized_column_key(col): col for col in out.columns}
+
+    def existing(*candidates: str) -> str | None:
+        for candidate in candidates:
+            key = normalized_column_key(candidate)
+            if key in col_map:
+                return col_map[key]
+        return None
+
+    reporter_col = existing("reporterCode", "reporter_code", "reporter_code_expected")
+    period_col = existing("period", "refPeriodId", "year")
+    class_col = existing("classificationCode", "classification_code")
+    if reporter_col is None or period_col is None:
+        return pd.DataFrame()
+
+    out["reporter_code_expected"] = pd.to_numeric(out[reporter_col], errors="coerce")
+    out["reporterCode"] = out["reporter_code_expected"]
+    out["period"] = pd.to_numeric(out[period_col], errors="coerce")
+    if class_col is None:
+        out["classificationCode"] = ""
+    else:
+        out["classificationCode"] = out[class_col].fillna("").astype(str).str.strip().str.upper()
+    out = out.dropna(subset=["reporter_code_expected", "period"])
+    if out.empty:
+        return pd.DataFrame()
+    out["reporter_code_expected"] = out["reporter_code_expected"].astype(int)
+    out["reporterCode"] = out["reporterCode"].astype(int)
+    out["period"] = out["period"].astype(int)
+    return out
+
+
+def filter_hs_availability(df: pd.DataFrame, settings: CountrySampleSettings | None = None) -> pd.DataFrame:
+    settings = settings or ACTIVE_COUNTRY_SAMPLE
+    out = standardize_availability_columns(df)
+    if out.empty:
+        return out
+    out = out[out["classificationCode"].astype(str).str.startswith("H")].copy()
+    out = out[out["period"] >= settings.start_year].copy()
+    if settings.end_year is not None:
+        out = out[out["period"] <= settings.end_year].copy()
+    return out
+
+
+def load_reporter_reference(refresh: bool = False) -> tuple[pd.DataFrame, str]:
+    if COMTRADE_REPORTERS_PATH.exists() and not refresh:
+        raw = COMTRADE_REPORTERS_PATH.read_bytes()
+    else:
+        response = requests.get(COMTRADE_REPORTERS_URL, timeout=30)
+        response.raise_for_status()
+        raw = response.content
+        COMTRADE_REPORTERS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        COMTRADE_REPORTERS_PATH.write_bytes(raw)
+
+    checksum = hashlib.sha256(raw).hexdigest()
+    payload = json.loads(raw.decode("utf-8"))
+    rows = payload.get("results", payload if isinstance(payload, list) else [])
+    ref = pd.DataFrame(rows)
+    if ref.empty:
+        raise RuntimeError("Comtrade reporter reference returned no rows.")
+    return ref, checksum
+
+
+def load_public_final_availability(settings: CountrySampleSettings | None = None) -> pd.DataFrame:
+    settings = settings or ACTIVE_COUNTRY_SAMPLE
+    path = availability_path("public_availability", settings.name)
+    if path.exists() and not settings.refresh_availability:
+        return pd.read_csv(path)
     if comtradeapicall is None:
         return pd.DataFrame()
+
+    if settings.name == "world_broad":
+        print("Checking public Comtrade annual HS final-data availability for all reporters", flush=True)
+        df = comtradeapicall._getFinalDataAvailability(typeCode="C", freqCode="A", clCode="HS", period=None, reporterCode=None)
+        availability = df.copy() if df is not None else pd.DataFrame()
+        availability.to_csv(path, index=False)
+        return availability
+
+    rows = []
     for country in PROF_P_COUNTRIES:
         try:
             print(f"Checking public availability: {country.country} ({country.reporter_code})", flush=True)
@@ -426,25 +719,274 @@ def download_public_availability_without_key() -> pd.DataFrame:
         df["available"] = True
         df.to_csv(COMTRADE_AVAILABILITY / f"{country.iso3}_{country.reporter_code}_public_availability.csv", index=False)
         rows.extend(df.to_dict("records"))
+
     availability = pd.DataFrame(rows)
-    availability.to_csv(COMTRADE_AVAILABILITY / "prof_p_panel_public_availability.csv", index=False)
+    availability.to_csv(path, index=False)
     return availability
 
 
-def save_country_panel() -> pd.DataFrame:
+def build_country_year_coverage(panel: pd.DataFrame, availability: pd.DataFrame, settings: CountrySampleSettings) -> tuple[pd.DataFrame, pd.DataFrame]:
+    hs = filter_hs_availability(availability, settings)
+    if hs.empty:
+        coverage = pd.DataFrame(columns=["country", "iso3", "reporter_code", "year", "classification_code"])
+        summary = panel[["country", "iso3", "reporter_code"]].copy()
+        summary["available_hs_years"] = 0
+        summary["first_available_year"] = pd.NA
+        summary["last_available_year"] = pd.NA
+        return coverage, summary
+
+    coverage = hs[["reporter_code_expected", "period", "classificationCode"]].drop_duplicates().copy()
+    coverage = coverage.rename(
+        columns={
+            "reporter_code_expected": "reporter_code",
+            "period": "year",
+            "classificationCode": "classification_code",
+        }
+    )
+    coverage = coverage.merge(panel[["country", "iso3", "reporter_code"]], on="reporter_code", how="inner")
+    coverage = coverage[["country", "iso3", "reporter_code", "year", "classification_code"]].sort_values(
+        ["reporter_code", "year", "classification_code"]
+    )
+
+    summary = (
+        coverage.groupby(["country", "iso3", "reporter_code"], as_index=False)
+        .agg(
+            available_hs_years=("year", "nunique"),
+            first_available_year=("year", "min"),
+            last_available_year=("year", "max"),
+        )
+        .sort_values(["country", "reporter_code"])
+    )
+    return coverage, summary
+
+
+def summarize_country_coverage(panel: pd.DataFrame, coverage: pd.DataFrame) -> pd.DataFrame:
+    if coverage.empty:
+        summary = panel[["country", "iso3", "reporter_code"]].copy()
+        summary["available_hs_years"] = 0
+        summary["first_available_year"] = pd.NA
+        summary["last_available_year"] = pd.NA
+        return summary
+    return (
+        coverage.groupby(["country", "iso3", "reporter_code"], as_index=False)
+        .agg(
+            available_hs_years=("year", "nunique"),
+            first_available_year=("year", "min"),
+            last_available_year=("year", "max"),
+        )
+        .sort_values(["country", "reporter_code"])
+    )
+
+
+def write_country_sample_outputs(
+    panel: pd.DataFrame,
+    coverage: pd.DataFrame,
+    coverage_summary: pd.DataFrame,
+    excluded: pd.DataFrame,
+    manifest: dict,
+    settings: CountrySampleSettings,
+) -> None:
+    out_dir = sample_processed_dir(settings.name)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    panel.to_csv(out_dir / "comtrade_country_panel.csv", index=False)
+    coverage.to_csv(out_dir / "country_year_coverage.csv", index=False)
+    coverage_summary.to_csv(out_dir / "country_coverage_summary.csv", index=False)
+    excluded.to_csv(out_dir / "excluded_reporters.csv", index=False)
+    write_json(out_dir / "availability_manifest.json", manifest)
+    panel.to_csv(DATA_PROCESSED / "comtrade_country_panel.csv", index=False)
+    if settings.name == "prof_p_33":
+        panel.to_csv(DATA_PROCESSED / "prof_p_country_panel.csv", index=False)
+
+
+def prof_p_country_sample(settings: CountrySampleSettings) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
     panel = pd.DataFrame([c.__dict__ for c in PROF_P_COUNTRIES])
-    panel.to_csv(DATA_PROCESSED / "prof_p_country_panel.csv", index=False)
-    return panel
+    availability_file = availability_path("public_availability", settings.name)
+    availability = (
+        load_public_final_availability(settings)
+        if settings.refresh_availability or availability_file.exists()
+        else pd.DataFrame()
+    )
+    coverage, coverage_summary = build_country_year_coverage(panel, availability, settings)
+    excluded = pd.DataFrame(columns=["country", "iso3", "reporter_code", "exclusion_reason"])
+    manifest = {
+        "created_at_utc": now_utc(),
+        "country_sample": settings.name,
+        "sample_rule": "Fixed Panagariya-Bagaria 33-country replication sample.",
+        "selected_reporters": int(len(panel)),
+        "availability_rows": int(len(availability)),
+        "reporter_reference_url": COMTRADE_REPORTERS_URL,
+        "availability_file": str(availability_file.relative_to(ROOT)) if availability_file.exists() else "",
+        "api_params": {"typeCode": "C", "freqCode": "A", "clCode": "HS"},
+        "start_year": settings.start_year,
+        "end_year": settings.end_year,
+        "min_available_years": settings.min_available_years,
+    }
+    return panel, coverage, excluded, manifest
+
+
+def world_broad_country_sample(settings: CountrySampleSettings) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+    reporters, reporter_checksum = load_reporter_reference(refresh=settings.refresh_availability)
+    availability = load_public_final_availability(settings)
+    hs = filter_hs_availability(availability, settings)
+    coverage_summary = (
+        hs.groupby("reporter_code_expected", as_index=False)
+        .agg(
+            available_hs_years=("period", "nunique"),
+            first_available_year=("period", "min"),
+            last_available_year=("period", "max"),
+        )
+        .rename(columns={"reporter_code_expected": "reporter_code"})
+        if not hs.empty
+        else pd.DataFrame(columns=["reporter_code", "available_hs_years", "first_available_year", "last_available_year"])
+    )
+
+    ref = reporters.copy()
+    required = {"reporterCode", "reporterDesc", "reporterCodeIsoAlpha3", "isGroup"}
+    missing = required.difference(ref.columns)
+    if missing:
+        raise RuntimeError(f"Comtrade reporter reference is missing required columns: {sorted(missing)}")
+    ref = ref.rename(
+        columns={
+            "reporterCode": "reporter_code",
+            "reporterDesc": "country",
+            "reporterCodeIsoAlpha3": "iso3",
+            "entryExpiredDate": "entry_expired_date",
+            "isGroup": "is_group",
+        }
+    )
+    if "entry_expired_date" not in ref.columns:
+        ref["entry_expired_date"] = ""
+    ref["reporter_code"] = pd.to_numeric(ref["reporter_code"], errors="coerce")
+    ref["country"] = ref["country"].fillna("").astype(str).str.strip()
+    ref["iso3"] = ref["iso3"].fillna("").astype(str).str.strip().str.upper()
+    ref["is_group"] = ref["is_group"].fillna(False).astype(bool)
+    ref["entry_expired_date"] = ref["entry_expired_date"].fillna("").astype(str).str.strip()
+    ref = ref.dropna(subset=["reporter_code"]).copy()
+    ref["reporter_code"] = ref["reporter_code"].astype(int)
+    ref = ref.merge(coverage_summary, on="reporter_code", how="left")
+    ref["available_hs_years"] = pd.to_numeric(ref["available_hs_years"], errors="coerce").fillna(0).astype(int)
+
+    def exclusion_reason(row: pd.Series) -> str:
+        if bool(row["is_group"]):
+            return "group"
+        if str(row["entry_expired_date"]).strip():
+            return "expired"
+        if not str(row["iso3"]).strip():
+            return "missing_iso3"
+        if int(row["available_hs_years"]) <= 0:
+            return "no_availability"
+        if int(row["available_hs_years"]) < settings.min_available_years:
+            return "insufficient_hs_years"
+        return ""
+
+    ref["exclusion_reason"] = ref.apply(exclusion_reason, axis=1)
+    selected = ref[ref["exclusion_reason"] == ""].copy()
+    panel = selected[["country", "iso3", "reporter_code"]].sort_values(["country", "reporter_code"]).reset_index(drop=True)
+    coverage, selected_summary = build_country_year_coverage(panel, availability, settings)
+    excluded = ref[ref["exclusion_reason"] != ""][
+        ["country", "iso3", "reporter_code", "exclusion_reason", "available_hs_years", "first_available_year", "last_available_year"]
+    ].sort_values(["exclusion_reason", "country", "reporter_code"])
+
+    manifest = {
+        "created_at_utc": now_utc(),
+        "country_sample": settings.name,
+        "sample_rule": "Active non-group Comtrade reporters with ISO3 metadata and enough annual final merchandise HS availability.",
+        "selected_reporters": int(len(panel)),
+        "excluded_reporters": int(len(excluded)),
+        "availability_rows": int(len(availability)),
+        "hs_availability_rows_in_window": int(len(hs)),
+        "reporter_reference_url": COMTRADE_REPORTERS_URL,
+        "reporter_reference_file": str(COMTRADE_REPORTERS_PATH.relative_to(ROOT)),
+        "reporter_reference_sha256": reporter_checksum,
+        "availability_file": str(availability_path("public_availability", settings.name).relative_to(ROOT)),
+        "api_params": {"typeCode": "C", "freqCode": "A", "clCode": "HS"},
+        "start_year": settings.start_year,
+        "end_year": settings.end_year,
+        "min_available_years": settings.min_available_years,
+    }
+    return panel, coverage, excluded, manifest
+
+
+def build_country_sample(settings: CountrySampleSettings | None = None) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+    settings = settings or ACTIVE_COUNTRY_SAMPLE
+    cached = _COUNTRY_SAMPLE_CACHE.get(settings)
+    if cached is not None:
+        return cached
+    if settings.name == "prof_p_33":
+        panel, coverage, excluded, manifest = prof_p_country_sample(settings)
+    else:
+        panel, coverage, excluded, manifest = world_broad_country_sample(settings)
+    coverage_summary = summarize_country_coverage(panel, coverage)
+    write_country_sample_outputs(panel, coverage, coverage_summary, excluded, manifest, settings)
+    cached = (panel, coverage, excluded, manifest)
+    _COUNTRY_SAMPLE_CACHE[settings] = cached
+    return cached
+
+
+def save_country_panel() -> pd.DataFrame:
+    panel, _coverage, _excluded, _manifest = build_country_sample(ACTIVE_COUNTRY_SAMPLE)
+    return panel.copy()
+
+
+def download_public_availability_without_key() -> pd.DataFrame:
+    """Save public Comtrade annual HS final-data availability metadata.
+
+    This records availability only. It does not retrieve the HS6 reporter-product-
+    partner trade values needed for the exercises.
+    """
+    availability = load_public_final_availability(ACTIVE_COUNTRY_SAMPLE)
+    save_country_panel()
+    return availability
+
+
+def check_comtrade_access(subscription_key: str | None) -> bool:
+    if not subscription_key:
+        availability = download_public_availability_without_key()
+        details = {
+            "country_sample": active_sample_name(),
+            "public_availability_rows_saved": int(len(availability)),
+            "public_availability_file": str(availability_path("public_availability").relative_to(ROOT)),
+            "sample_manifest": str((sample_processed_dir() / "availability_manifest.json").relative_to(ROOT)),
+        }
+        write_blocker("No Comtrade subscription key found in COMTRADE_SUBSCRIPTION_KEY or --subscription-key.", details)
+        return False
+
+    if comtradeapicall is None:
+        write_blocker("Python package `comtradeapicall` is not installed.")
+        return False
+
+    try:
+        df = comtradeapicall.getFinalDataBulkAvailability(
+            subscription_key,
+            typeCode="C",
+            freqCode="A",
+            clCode="HS",
+            period=2001,
+            reporterCode=842,
+        )
+    except Exception as exc:  # pragma: no cover - depends on remote API
+        write_blocker("Comtrade access probe failed.", {"exception": repr(exc)})
+        return False
+
+    if df is None or len(df) == 0:
+        write_blocker(
+            "Comtrade access probe returned no data for US annual HS 2001 bulk availability.",
+            {"probe_reporter": 842, "probe_period": 2001},
+        )
+        return False
+
+    return True
 
 
 def download_availability(subscription_key: str) -> pd.DataFrame:
-    existing = COMTRADE_AVAILABILITY / "prof_p_panel_availability.csv"
-    if existing.exists():
+    existing = availability_path("availability")
+    if existing.exists() and not ACTIVE_COUNTRY_SAMPLE.refresh_availability:
         print(f"Using existing keyed availability: {existing}", flush=True)
         return pd.read_csv(existing)
 
+    panel = save_country_panel()
     rows = []
-    for country in PROF_P_COUNTRIES:
+    for country in panel.itertuples(index=False):
         print(f"Checking availability: {country.country} ({country.reporter_code})", flush=True)
         df = comtradeapicall.getFinalDataBulkAvailability(
             subscription_key,
@@ -452,14 +994,14 @@ def download_availability(subscription_key: str) -> pd.DataFrame:
             freqCode="A",
             clCode="HS",
             period=None,
-            reporterCode=country.reporter_code,
+            reporterCode=int(country.reporter_code),
         )
         if df is None or df.empty:
             rows.append(
                 {
                     "country": country.country,
                     "iso3": country.iso3,
-                    "reporter_code": country.reporter_code,
+                    "reporter_code": int(country.reporter_code),
                     "period": None,
                     "available": False,
                 }
@@ -468,12 +1010,16 @@ def download_availability(subscription_key: str) -> pd.DataFrame:
         df = df.copy()
         df["country"] = country.country
         df["iso3"] = country.iso3
-        df["reporter_code_expected"] = country.reporter_code
-        df.to_csv(COMTRADE_AVAILABILITY / f"{country.iso3}_{country.reporter_code}_availability.csv", index=False)
+        df["reporter_code_expected"] = int(country.reporter_code)
+        if ACTIVE_COUNTRY_SAMPLE.name == "prof_p_33":
+            per_country_path = COMTRADE_AVAILABILITY / f"{country.iso3}_{int(country.reporter_code)}_availability.csv"
+        else:
+            per_country_path = COMTRADE_AVAILABILITY / f"{ACTIVE_COUNTRY_SAMPLE.name}_{country.iso3}_{int(country.reporter_code)}_availability.csv"
+        df.to_csv(per_country_path, index=False)
         rows.extend(df.to_dict("records"))
 
     availability = pd.DataFrame(rows)
-    availability.to_csv(COMTRADE_AVAILABILITY / "prof_p_panel_availability.csv", index=False)
+    availability.to_csv(existing, index=False)
     return availability
 
 
@@ -565,14 +1111,20 @@ def download_bulk_files(
     if availability.empty:
         raise RuntimeError("No Comtrade availability rows to download.")
 
-    available = availability.dropna(subset=["period"]).copy()
-    if "classificationCode" in available.columns:
-        available = available[available["classificationCode"].astype(str).str.startswith("H")].copy()
-    available["period"] = available["period"].astype(int)
+    panel = save_country_panel()
+    panel_meta = panel.set_index("reporter_code")[["country", "iso3"]].to_dict("index")
+    panel_codes = set(panel["reporter_code"].astype(int))
+    available = filter_hs_availability(availability, ACTIVE_COUNTRY_SAMPLE)
+    available = available[available["reporter_code_expected"].isin(panel_codes)].copy()
+    if available.empty:
+        raise RuntimeError("No selected annual HS bulk availability rows to download.")
+    available["country"] = available["reporter_code_expected"].map(lambda code: panel_meta.get(int(code), {}).get("country", ""))
+    available["iso3"] = available["reporter_code_expected"].map(lambda code: panel_meta.get(int(code), {}).get("iso3", ""))
     available = available.sort_values(["reporter_code_expected", "period"])
     if max_years is not None:
         available = available.groupby("reporter_code_expected", as_index=False).head(max_years)
-    available["file_size_bytes_sort"] = available.get("fileSize", "").map(parse_file_size_to_bytes)
+    file_size_source = available["fileSize"] if "fileSize" in available.columns else pd.Series("", index=available.index)
+    available["file_size_bytes_sort"] = file_size_source.map(parse_file_size_to_bytes)
     if min_file_mb is not None:
         available = available[available["file_size_bytes_sort"] >= min_file_mb * 1_000_000].copy()
     if max_file_mb is not None:
@@ -612,10 +1164,12 @@ def download_bulk_files(
     manifest = {
         "created_at_utc": now_utc(),
         "source": "UN Comtrade final annual HS bulk data",
+        "country_sample": active_sample_name(),
+        "sample_settings": ACTIVE_COUNTRY_SAMPLE.__dict__,
         "typeCode": "C",
         "freqCode": "A",
         "clCode": "HS",
-        "countries": [c.__dict__ for c in PROF_P_COUNTRIES],
+        "countries": panel.to_dict("records"),
         "downloads": manifest_rows,
     }
     write_json(COMTRADE_RAW / "manifest.json", manifest)
@@ -878,6 +1432,7 @@ def extract_leaf_trade(df: pd.DataFrame) -> pd.DataFrame:
         out["is_aggregate"] = pd.to_numeric(df.loc[out.index, "isaggregate"], errors="coerce").fillna(0).astype(int)
         out = out[out["is_aggregate"] == 0].copy()
     out = out[out["cmd_code"].str.match(r"^\d{6}$", na=False)].copy()
+    out = drop_excluded_hs6(out)
     out["hs2"] = out["cmd_code"].str[:2]
     out = out[out["partner_code"] != 0]
     out = out[out["flow"].isin(["Exports", "Imports"])]
@@ -935,6 +1490,7 @@ def metric_row(values: pd.Series, prefix: str) -> dict:
 
 
 def compute_concentration(leaf: pd.DataFrame, variant: str = "baseline") -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    leaf = drop_excluded_hs6(leaf)
     product_rows = []
     partner_rows = []
     cell_rows = []
@@ -966,7 +1522,7 @@ def compute_concentration(leaf: pd.DataFrame, variant: str = "baseline") -> tupl
 
 
 def collect_leaf_data() -> pd.DataFrame:
-    files = sorted(COMTRADE_BULK.glob("COMTRADE-FINAL-*H*.gz")) + sorted(COMTRADE_BULK.glob("COMTRADE-FINAL-*H*.txt"))
+    files = hs_bulk_files()
     if not files:
         raise FileNotFoundError(f"No Comtrade bulk files found in {COMTRADE_BULK}")
     frames = []
@@ -979,14 +1535,47 @@ def collect_leaf_data() -> pd.DataFrame:
     if not frames:
         raise RuntimeError("No positive HS6 import/export partner records were extracted.")
     out = pd.concat(frames, ignore_index=True)
-    panel_codes = {c.reporter_code for c in PROF_P_COUNTRIES}
+    panel_codes = set(save_country_panel()["reporter_code"].astype(int))
     out = out[out["reporter_code"].isin(panel_codes)].copy()
-    out.to_parquet(DATA_PROCESSED / "hs6_partner_leaf_trade_all_years.parquet", index=False)
+    out.to_parquet(sample_processed_path("hs6_partner_leaf_trade_all_years.parquet"), index=False)
     return out
+
+
+def bulk_file_metadata(path: Path) -> dict | None:
+    match = re.search(r"COMTRADE-FINAL-CA(\d{3})(\d{4})(H[0-6])(?=\[|\.|$)", path.name.upper())
+    if not match:
+        return None
+    return {
+        "reporter_code": int(match.group(1)),
+        "year": int(match.group(2)),
+        "classification_code": match.group(3),
+    }
 
 
 def hs_bulk_files(max_files: int | None = None) -> list[Path]:
     files = sorted(COMTRADE_BULK.glob("COMTRADE-FINAL-*H*.gz")) + sorted(COMTRADE_BULK.glob("COMTRADE-FINAL-*H*.txt"))
+    panel, coverage, _excluded, _manifest = build_country_sample(ACTIVE_COUNTRY_SAMPLE)
+    reporter_codes = set(panel["reporter_code"].astype(int))
+    allowed_pairs = None
+    if active_sample_name() != "prof_p_33" and not coverage.empty:
+        allowed_pairs = set(zip(coverage["reporter_code"].astype(int), coverage["year"].astype(int)))
+    filtered = []
+    for path in files:
+        metadata = bulk_file_metadata(path)
+        if metadata is None:
+            continue
+        reporter_code = int(metadata["reporter_code"])
+        year = int(metadata["year"])
+        if reporter_code not in reporter_codes:
+            continue
+        if year < ACTIVE_COUNTRY_SAMPLE.start_year:
+            continue
+        if ACTIVE_COUNTRY_SAMPLE.end_year is not None and year > ACTIVE_COUNTRY_SAMPLE.end_year:
+            continue
+        if allowed_pairs is not None and (reporter_code, year) not in allowed_pairs:
+            continue
+        filtered.append(path)
+    files = filtered
     if max_files is not None:
         return files[:max_files]
     return files
@@ -1020,6 +1609,7 @@ def combine_partial_group_sums(partials: Iterable[Path], group_cols: list[str], 
         if missing:
             raise RuntimeError(f"Checkpoint {partial} is missing required columns: {sorted(missing)}")
         frame = frame[columns].copy()
+        frame = drop_excluded_hs6(frame)
         frame[value_col] = pd.to_numeric(frame[value_col], errors="coerce")
         frame = frame.dropna(subset=[value_col])
         if frame.empty:
@@ -1056,6 +1646,7 @@ def combine_partial_group_sums_arrow(partials: Iterable[Path], group_cols: list[
         out = out.rename(columns={sum_col: value_col})
     out[value_col] = pd.to_numeric(out[value_col], errors="coerce")
     out = out.dropna(subset=[value_col])
+    out = drop_excluded_hs6(out)
     return out[columns].copy() if not out.empty else pd.DataFrame(columns=columns)
 
 
@@ -1073,6 +1664,7 @@ def add_group_sum_frame(
     if missing:
         raise RuntimeError(f"Aggregate frame is missing required columns: {sorted(missing)}")
     frame = frame[columns].copy()
+    frame = drop_excluded_hs6(frame)
     frame[value_col] = pd.to_numeric(frame[value_col], errors="coerce")
     frame = frame.dropna(subset=[value_col])
     frame = frame[frame[value_col] > 0].copy()
@@ -1094,6 +1686,9 @@ def finish_group_sum_frame(
     columns = [*group_cols, value_col]
     if combined is None or combined.empty:
         return pd.DataFrame(columns=columns)
+    combined = drop_excluded_hs6(combined)
+    if combined.empty:
+        return pd.DataFrame(columns=columns)
     return combined.groupby(group_cols, as_index=False)[value_col].sum()
 
 
@@ -1112,6 +1707,7 @@ def merge_metric_tables(product: pd.DataFrame, partner: pd.DataFrame, cell: pd.D
 
 
 def compute_exercise_06_outputs_for_leaf(leaf: pd.DataFrame, panel: pd.DataFrame) -> tuple[list[pd.DataFrame], list[pd.DataFrame]]:
+    leaf = drop_excluded_hs6(leaf)
     outputs = []
     removal_rows = []
     base_totals = leaf.groupby(["reporter_code", "year", "flow"], as_index=False)["trade_value"].sum().rename(
@@ -1283,6 +1879,7 @@ def build_bec5_mapping_review() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFram
     raw = pd.DataFrame(rows).drop_duplicates()
     if raw.empty:
         raise RuntimeError("No HS6-to-BEC rows were extracted from the official correlation table.")
+    raw = drop_excluded_hs6(raw)
 
     raw["bec4_label"] = raw["bec4_code"].map(bec4_label).fillna("")
     raw["bec5_label"] = raw["bec5_code"].map(bec5_label).fillna("")
@@ -1467,6 +2064,9 @@ def exercise_03_import_aggregates_for_leaf(leaf: pd.DataFrame, mapping: pd.DataF
     require_leaf_classification_code(imports)
     imports["classification_code"] = imports["classification_code"].astype(str).str.strip().str.upper()
     imports["cmd_code"] = imports["cmd_code"].astype(str).str.extract(r"(\d{6})", expand=False).fillna("")
+    imports = drop_excluded_hs6(imports)
+    if imports.empty:
+        return pd.DataFrame(), pd.DataFrame()
 
     mapping_cols = [
         "classification_code",
@@ -1607,15 +2207,15 @@ def run_exercise_03_from_aggregates(
             }
         )
     concentration = pd.DataFrame(rows)
-    concentration.to_parquet(DATA_PROCESSED / "exercise_03_import_bin_concentration.parquet", index=False)
+    concentration.to_parquet(sample_processed_path("exercise_03_import_bin_concentration.parquet"), index=False)
     concentration.to_csv(EX03_TABLES / "import_bin_concentration.csv", index=False)
 
     total_concentration = compute_exercise_03_total_concentration(product_values, country_meta)
-    total_concentration.to_parquet(DATA_PROCESSED / "exercise_03_total_import_concentration.parquet", index=False)
+    total_concentration.to_parquet(sample_processed_path("exercise_03_total_import_concentration.parquet"), index=False)
     total_concentration.to_csv(EX03_TABLES / "import_total_concentration.csv", index=False)
 
     decomposition = compute_exercise_03_bin_decomposition(product_values, country_meta)
-    decomposition.to_parquet(DATA_PROCESSED / "exercise_03_import_bin_decomposition.parquet", index=False)
+    decomposition.to_parquet(sample_processed_path("exercise_03_import_bin_decomposition.parquet"), index=False)
     decomposition.to_csv(EX03_TABLES / "import_bin_decomposition.csv", index=False)
 
     coverage = coverage_products.groupby(
@@ -1655,6 +2255,7 @@ def standardize_exercise_03_product_values(df: pd.DataFrame) -> pd.DataFrame:
     out["trade_value"] = pd.to_numeric(out["trade_value"], errors="coerce")
     out = out.dropna(subset=["reporter_code", "year", "exercise_03_bin", "cmd_code", "trade_value"])
     out = out[out["trade_value"] > 0].copy()
+    out = drop_excluded_hs6(out)
     if out.empty:
         return pd.DataFrame(columns=cols)
     out["reporter_code"] = out["reporter_code"].astype(int)
@@ -1677,6 +2278,7 @@ def standardize_exercise_03_coverage_products(df: pd.DataFrame) -> pd.DataFrame:
     out["trade_value"] = pd.to_numeric(out["trade_value"], errors="coerce")
     out = out.dropna(subset=["reporter_code", "year", "exercise_03_bin", "mapping_status", "cmd_code", "trade_value"])
     out = out[out["trade_value"] > 0].copy()
+    out = drop_excluded_hs6(out)
     if out.empty:
         return pd.DataFrame(columns=cols)
     out["reporter_code"] = out["reporter_code"].astype(int)
@@ -2140,7 +2742,7 @@ def exercise_04_product_metrics_from_supplier_values(supplier_values: pd.DataFra
 def write_exercise_04_outputs(product: pd.DataFrame, source_details: dict | None = None) -> pd.DataFrame:
     if product.empty:
         raise RuntimeError("No Exercise 4 import supplier rows were produced.")
-    product.to_parquet(DATA_PROCESSED / "exercise_04_dominant_supplier_by_product.parquet", index=False)
+    product.to_parquet(sample_processed_path("exercise_04_dominant_supplier_by_product.parquet"), index=False)
     product.to_csv(EX04_TABLES / "dominant_supplier_by_product.csv", index=False)
 
     summary_rows = []
@@ -2202,6 +2804,7 @@ def standardize_exercise_04_supplier_values(df: pd.DataFrame) -> pd.DataFrame:
     out["trade_value"] = pd.to_numeric(out["trade_value"], errors="coerce")
     out = out.dropna(subset=["reporter_code", "year", "cmd_code", "partner_code", "trade_value"])
     out = out[out["trade_value"] > 0].copy()
+    out = drop_excluded_hs6(out)
     if out.empty:
         return pd.DataFrame(columns=cols)
     out["reporter_code"] = out["reporter_code"].astype(int)
@@ -2574,6 +3177,9 @@ def exercise_11_aggregates_for_leaf(leaf: pd.DataFrame, bec_mapping: pd.DataFram
     base = leaf.copy()
     base["classification_code"] = base["classification_code"].map(normalize_hs_classification_code)
     base["cmd_code"] = base["cmd_code"].astype(str).str.extract(r"(\d{6})", expand=False).fillna("")
+    base = drop_excluded_hs6(base)
+    if base.empty:
+        return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
     mapping_cols = [
         "classification_code",
@@ -2920,9 +3526,9 @@ def finalize_exercise_11_from_partials(
     exposure = compute_exercise_11_input_exposure(export_ranked, import_concentration, input_requirements)
     summary = summarize_exercise_11_country_year(exposure)
 
-    import_concentration.to_parquet(DATA_PROCESSED / "exercise_11_imported_input_concentration.parquet", index=False)
+    import_concentration.to_parquet(sample_processed_path("exercise_11_imported_input_concentration.parquet"), index=False)
     import_concentration.to_csv(EX11_TABLES / "imported_input_concentration_by_sector.csv", index=False)
-    exposure.to_parquet(DATA_PROCESSED / "exercise_11_top_export_input_exposure.parquet", index=False)
+    exposure.to_parquet(sample_processed_path("exercise_11_top_export_input_exposure.parquet"), index=False)
     exposure.to_csv(EX11_TABLES / "top_export_sector_input_exposure.csv", index=False)
     summary.to_csv(EX11_TABLES / "country_year_input_output_linkage_summary.csv", index=False)
 
@@ -3234,7 +3840,7 @@ def run_exercises_streaming(
     partner.to_csv(EX01_TABLES / "partner_concentration_all_years.csv", index=False)
     cell.to_csv(EX01_TABLES / "product_partner_cell_concentration_all_years.csv", index=False)
     concentration = merge_metric_tables(product, partner, cell)
-    concentration.to_parquet(DATA_PROCESSED / "concentration_all_years.parquet", index=False)
+    concentration.to_parquet(sample_processed_path("concentration_all_years.parquet"), index=False)
     concentration.to_csv(EX01_TABLES / "concentration_all_years.csv", index=False)
     make_exercise_01_figures(concentration)
     write_exercise_01_memo(concentration)
@@ -3243,10 +3849,10 @@ def run_exercises_streaming(
     exclusions.to_csv(EX06_TABLES / "concentration_exclusions_all_years.csv", index=False)
     parquet_error = None
     try:
-        exclusions.to_parquet(DATA_PROCESSED / "concentration_exclusions_all_years.parquet", index=False)
+        exclusions.to_parquet(sample_processed_path("concentration_exclusions_all_years.parquet"), index=False)
     except Exception as exc:
         parquet_error = f"{type(exc).__name__}: {exc}"
-        (DATA_PROCESSED / "concentration_exclusions_all_years.parquet.error.txt").write_text(
+        sample_processed_path("concentration_exclusions_all_years.parquet.error.txt").write_text(
             parquet_error + "\n",
             encoding="utf-8",
         )
@@ -3361,7 +3967,7 @@ def run_exercise_01_streaming() -> pd.DataFrame:
     partner.to_csv(EX01_TABLES / "partner_concentration_all_years.csv", index=False)
     cell.to_csv(EX01_TABLES / "product_partner_cell_concentration_all_years.csv", index=False)
     concentration = merge_metric_tables(product, partner, cell)
-    concentration.to_parquet(DATA_PROCESSED / "concentration_all_years.parquet", index=False)
+    concentration.to_parquet(sample_processed_path("concentration_all_years.parquet"), index=False)
     concentration.to_csv(EX01_TABLES / "concentration_all_years.csv", index=False)
     make_exercise_01_figures(concentration)
     write_exercise_01_memo(concentration)
@@ -3404,7 +4010,7 @@ def run_exercise_06_streaming() -> pd.DataFrame:
         raise RuntimeError("No Exercise 6 rows were produced from HS bulk files.")
 
     exclusions = pd.concat(ex06_outputs, ignore_index=True)
-    exclusions.to_parquet(DATA_PROCESSED / "concentration_exclusions_all_years.parquet", index=False)
+    exclusions.to_parquet(sample_processed_path("concentration_exclusions_all_years.parquet"), index=False)
     exclusions.to_csv(EX06_TABLES / "concentration_exclusions_all_years.csv", index=False)
     if ex06_removed:
         removed = pd.concat(ex06_removed, ignore_index=True)
@@ -3442,7 +4048,7 @@ def run_exercise_01(leaf: pd.DataFrame) -> pd.DataFrame:
         on=["country", "iso3", "reporter_code", "year", "flow", "variant"],
         how="outer",
     )
-    combined.to_parquet(DATA_PROCESSED / "concentration_all_years.parquet", index=False)
+    combined.to_parquet(sample_processed_path("concentration_all_years.parquet"), index=False)
     combined.to_csv(EX01_TABLES / "concentration_all_years.csv", index=False)
     make_exercise_01_figures(combined)
     write_exercise_01_memo(combined)
@@ -3672,6 +4278,7 @@ def fetch_world_bank_controls(iso3s: list[str], start: int, end: int) -> pd.Data
 
 
 def exercise_02_panel_rows_for_leaf(leaf: pd.DataFrame) -> pd.DataFrame:
+    leaf = drop_excluded_hs6(leaf)
     exports = leaf[leaf["flow"] == "Exports"].copy()
     if exports.empty:
         return pd.DataFrame()
@@ -4083,14 +4690,14 @@ def run_exercise_02_from_panel(panel: pd.DataFrame, source_details: dict | None 
     if panel.empty:
         raise RuntimeError("No Exercise 2 export panel rows were produced.")
     panel = panel.sort_values(["reporter_code", "year"]).copy()
-    panel.to_parquet(DATA_PROCESSED / "exercise_02_export_concentration_panel.parquet", index=False)
+    panel.to_parquet(sample_processed_path("exercise_02_export_concentration_panel.parquet"), index=False)
     panel.to_csv(EX02_TABLES / "export_concentration_panel.csv", index=False)
 
     growth = build_exercise_02_growth_rows(panel)
     if growth.empty:
         raise RuntimeError("No Exercise 2 growth rows were produced. Need at least one country with t+h export data.")
     growth = add_exercise_02_controls(growth)
-    growth.to_parquet(DATA_PROCESSED / "exercise_02_bucket_growth_panel.parquet", index=False)
+    growth.to_parquet(sample_processed_path("exercise_02_bucket_growth_panel.parquet"), index=False)
     growth.to_csv(EX02_TABLES / "bucket_growth_panel.csv", index=False)
 
     summary = growth.groupby(["horizon", "concentration_bucket"], as_index=False).agg(
@@ -4316,6 +4923,7 @@ def partner_region_table(partner_codes: Iterable[int]) -> pd.DataFrame:
 
 
 def exercise_12_export_aggregates_for_leaf(leaf: pd.DataFrame) -> tuple[dict[str, pd.DataFrame], pd.DataFrame]:
+    leaf = drop_excluded_hs6(leaf)
     exports = leaf[leaf["flow"] == "Exports"].copy()
     if exports.empty:
         return {}, pd.DataFrame()
@@ -4426,6 +5034,9 @@ def prepare_exercise_12_item_values(
         out["classification_code"] = out["classification_code"].map(normalize_hs_classification_code).replace("", "UNKNOWN")
         out["cmd_code"] = out["cmd_code"].astype(str).str.extract(r"(\d{6})", expand=False)
         out = out.dropna(subset=["cmd_code"])
+        out = drop_excluded_hs6(out)
+        if out.empty:
+            return pd.DataFrame(columns=["reporter_code", "year", "item_id", "trade_value"])
         if item_id_mode == "hs6_revision":
             out["product_item_id"] = out["classification_code"] + ":" + out["cmd_code"]
         elif item_id_mode == "hs4":
@@ -5011,6 +5622,11 @@ def product_scope_states(product_partner: pd.DataFrame) -> pd.DataFrame:
     if "classification_code" not in product_partner.columns:
         product_partner["classification_code"] = ""
     product_partner["classification_code"] = product_partner["classification_code"].map(normalize_hs_classification_code).replace("", "UNKNOWN")
+    product_partner["cmd_code"] = product_partner["cmd_code"].astype(str).str.extract(r"(\d{6})", expand=False)
+    product_partner = product_partner.dropna(subset=["cmd_code"])
+    product_partner = drop_excluded_hs6(product_partner)
+    if product_partner.empty:
+        return pd.DataFrame()
     product_partner["product_identity"] = product_partner["classification_code"] + ":" + product_partner["cmd_code"].astype(str)
     regions = partner_region_table(product_partner["partner_code"].unique())
     pp = product_partner.merge(regions[["partner_code", "partner_region"]], on="partner_code", how="left")
@@ -5069,7 +5685,7 @@ def run_exercise_12_from_aggregates(
 
     all_values = pd.concat(values_out, ignore_index=True)
     all_values = add_country_metadata(all_values)
-    all_values.to_parquet(DATA_PROCESSED / "exercise_12_export_aggregates.parquet", index=False)
+    all_values.to_parquet(sample_processed_path("exercise_12_export_aggregates.parquet"), index=False)
 
     decomposition = pd.concat(net_rows, ignore_index=True) if net_rows else pd.DataFrame()
     gross_decomposition = pd.concat(gross_rows, ignore_index=True) if gross_rows else pd.DataFrame()
@@ -5093,7 +5709,7 @@ def run_exercise_12_from_aggregates(
     gross_decomposition.to_csv(EX12_TABLES / "growth_decomposition_gross.csv", index=False)
     size_transitions.to_csv(EX12_TABLES / "transition_matrices_detailed.csv", index=False)
     hs_diagnostics.to_csv(EX12_TABLES / "hs_revision_pair_diagnostics.csv", index=False)
-    main_decomposition.to_parquet(DATA_PROCESSED / "exercise_12_growth_decomposition.parquet", index=False)
+    main_decomposition.to_parquet(sample_processed_path("exercise_12_growth_decomposition.parquet"), index=False)
     main_decomposition.to_csv(EX12_TABLES / "growth_decomposition.csv", index=False)
     size_transitions.to_csv(EX12_TABLES / "size_transition_matrices.csv", index=False)
 
@@ -5278,7 +5894,7 @@ def run_exercise_06(leaf: pd.DataFrame) -> pd.DataFrame:
         raise RuntimeError("No Exercise 6 rows were produced from the HS6 leaf trade data.")
 
     out = pd.concat(outputs, ignore_index=True)
-    out.to_parquet(DATA_PROCESSED / "concentration_exclusions_all_years.parquet", index=False)
+    out.to_parquet(sample_processed_path("concentration_exclusions_all_years.parquet"), index=False)
     out.to_csv(EX06_TABLES / "concentration_exclusions_all_years.csv", index=False)
     if removal_rows:
         removed = pd.concat(removal_rows, ignore_index=True)
@@ -5400,6 +6016,7 @@ def expected_dirichlet_top_share(active_items: int, top_n: int) -> float:
 
 
 def dimension_values_for_benchmark(leaf: pd.DataFrame, dimension: str) -> pd.DataFrame:
+    leaf = drop_excluded_hs6(leaf)
     item_cols = EX10_DIMENSIONS[dimension]
     group_cols = ["reporter_code", "year", "flow", *item_cols]
     return leaf.groupby(group_cols, as_index=False)["trade_value"].sum()
@@ -5652,7 +6269,7 @@ def run_exercise_10_from_actual_rows(
         rows.append(row)
 
     out = pd.DataFrame(rows)
-    out.to_parquet(DATA_PROCESSED / "random_benchmark_all_years.parquet", index=False)
+    out.to_parquet(sample_processed_path("random_benchmark_all_years.parquet"), index=False)
     out.to_csv(EX10_TABLES / "random_benchmark_all_years.csv", index=False)
     make_exercise_10_figures(out)
     write_exercise_10_memo(out)
@@ -5817,9 +6434,9 @@ def validate_benchmark(
 
 
 def load_or_collect_leaf(args: argparse.Namespace) -> pd.DataFrame:
-    leaf_path = DATA_PROCESSED / "hs6_partner_leaf_trade_all_years.parquet"
+    leaf_path = sample_processed_path("hs6_partner_leaf_trade_all_years.parquet")
     if leaf_path.exists() and not args.reprocess_raw:
-        return pd.read_parquet(leaf_path)
+        return drop_excluded_hs6(pd.read_parquet(leaf_path))
     return collect_leaf_data()
 
 
@@ -5873,9 +6490,11 @@ def run_selected_exercise_from_leaf(args: argparse.Namespace, leaf: pd.DataFrame
         raise ValueError(f"Unsupported selected exercise: {args.exercise}")
 
     write_json(RESULTS / "run_manifest.json", manifest)
+    mark_exercise_outputs_complete(args.exercise, details=manifest)
 
 
 def run_all(args: argparse.Namespace) -> None:
+    configure_country_sample_from_args(args)
     apply_memory_limit(args.memory_limit_gb)
     ensure_dirs()
     if args.prepare_bec5_mapping_review:
@@ -5888,19 +6507,37 @@ def run_all(args: argparse.Namespace) -> None:
         raise RuntimeError("--finalize-only is only supported with --exercise 3, --exercise 4, or --exercise 11.")
 
     save_country_panel()
+    if args.stage in {"process", "all"} and can_reuse_exercise_outputs(args) and exercise_outputs_available(args.exercise):
+        manifest = {
+            "created_at_utc": now_utc(),
+            "mode": "skipped_existing_outputs",
+            "country_sample": active_sample_name(),
+            "exercise": args.exercise,
+            "outputs": [str(path.relative_to(ROOT)) for path in exercise_output_paths(args.exercise)],
+            "policy": "Existing complete outputs were reused. Use --reprocess-raw, --fresh-checkpoints, or --max-files to force work.",
+            "exercises_md_updated": False,
+        }
+        write_json(RESULTS / "run_manifest.json", manifest)
+        print(f"Skipping exercise {args.exercise}: existing outputs are available for sample {active_sample_name()}.", flush=True)
+        return
+
     subscription_key = get_key(args)
     if args.stage in {"download", "all"}:
-        if not check_comtrade_access(subscription_key):
-            return
-        availability = download_availability(subscription_key)
-        download_bulk_files(
-            subscription_key,
-            availability,
-            max_years=args.max_years_per_country,
-            workers=args.download_workers,
-            max_file_mb=args.max_file_mb,
-            min_file_mb=args.min_file_mb,
-        )
+        local_files = hs_bulk_files(max_files=args.max_files)
+        if args.stage == "all" and local_files and not args.refresh_availability:
+            print(f"Skipping download: {len(local_files)} matching local Comtrade bulk files are already available.", flush=True)
+        else:
+            if not check_comtrade_access(subscription_key):
+                return
+            availability = download_availability(subscription_key)
+            download_bulk_files(
+                subscription_key,
+                availability,
+                max_years=args.max_years_per_country,
+                workers=args.download_workers,
+                max_file_mb=args.max_file_mb,
+                min_file_mb=args.min_file_mb,
+            )
 
     if args.stage in {"process", "all"}:
         if args.exercise == "all":
@@ -5943,6 +6580,7 @@ def run_all(args: argparse.Namespace) -> None:
                         "exercises_md_updated": False,
                     },
                 )
+                mark_many_exercises_complete(PIPELINE_EXERCISES, details={"mode": "in_memory_leaf"})
             else:
                 run_exercises_streaming(
                     simulations=args.simulations,
@@ -5952,13 +6590,16 @@ def run_all(args: argparse.Namespace) -> None:
                     max_simulated_items=args.benchmark_max_simulated_items,
                     max_files=args.max_files,
                 )
+                mark_many_exercises_complete(PIPELINE_EXERCISES, details={"mode": "streaming"})
         elif args.keep_leaf:
             leaf = load_or_collect_leaf(args)
             run_selected_exercise_from_leaf(args, leaf)
         elif args.exercise == "1":
             run_exercise_01_streaming()
+            mark_exercise_outputs_complete("1", details={"mode": "exercise_01_streaming"})
         elif args.exercise == "2":
             run_exercise_02_streaming(max_files=args.max_files)
+            mark_exercise_outputs_complete("2", details={"mode": "exercise_02_streaming"})
         elif args.exercise == "3":
             run_exercise_03_streaming(
                 max_files=args.max_files,
@@ -5966,6 +6607,7 @@ def run_all(args: argparse.Namespace) -> None:
                 finalize_only=args.finalize_only,
                 chunk_rows=args.chunk_rows,
             )
+            mark_exercise_outputs_complete("3", details={"mode": "exercise_03_streaming"})
         elif args.exercise == "4":
             run_exercise_04_streaming(
                 max_files=args.max_files,
@@ -5973,8 +6615,10 @@ def run_all(args: argparse.Namespace) -> None:
                 finalize_only=args.finalize_only,
                 chunk_rows=args.chunk_rows,
             )
+            mark_exercise_outputs_complete("4", details={"mode": "exercise_04_streaming"})
         elif args.exercise == "6":
             run_exercise_06_streaming()
+            mark_exercise_outputs_complete("6", details={"mode": "exercise_06_streaming"})
         elif args.exercise == "10":
             run_exercise_10_streaming(
                 simulations=args.simulations,
@@ -5984,6 +6628,7 @@ def run_all(args: argparse.Namespace) -> None:
                 max_simulated_items=args.benchmark_max_simulated_items,
                 max_files=args.max_files,
             )
+            mark_exercise_outputs_complete("10", details={"mode": "exercise_10_streaming"})
         elif args.exercise == "11":
             run_exercise_11_streaming(
                 max_files=args.max_files,
@@ -5991,8 +6636,10 @@ def run_all(args: argparse.Namespace) -> None:
                 finalize_only=args.finalize_only,
                 chunk_rows=args.chunk_rows,
             )
+            mark_exercise_outputs_complete("11", details={"mode": "exercise_11_streaming"})
         elif args.exercise == "12":
             run_exercise_12_streaming(max_files=args.max_files)
+            mark_exercise_outputs_complete("12", details={"mode": "exercise_12_streaming"})
         else:
             raise ValueError(f"Unsupported exercise: {args.exercise}")
 
@@ -6015,6 +6662,11 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Promote the reviewed Exercise 3 BEC mapping candidate to the approved mapping required by Exercise 3.",
     )
     parser.add_argument("--subscription-key", default=None, help="UN Comtrade subscription key. Defaults to COMTRADE_SUBSCRIPTION_KEY.")
+    parser.add_argument("--country-sample", choices=COUNTRY_SAMPLE_CHOICES, default="prof_p_33", help="Reporter sample to use for downloads, raw-file filtering, and country metadata.")
+    parser.add_argument("--min-available-years", type=int, default=10, help="Minimum annual HS years required for the world_broad sample.")
+    parser.add_argument("--start-year", type=int, default=1988, help="Earliest annual HS year included in sample eligibility and raw-file processing.")
+    parser.add_argument("--end-year", type=int, default=None, help="Latest annual HS year included in sample eligibility and raw-file processing.")
+    parser.add_argument("--refresh-availability", action="store_true", help="Refresh Comtrade reporter and availability metadata instead of using local caches.")
     parser.add_argument("--simulations", type=int, default=1000)
     parser.add_argument("--seed", type=int, default=20260518)
     parser.add_argument("--max-years-per-country", type=int, default=None, help="Debug option; leave unset for all available years.")
