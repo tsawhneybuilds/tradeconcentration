@@ -17,6 +17,7 @@ PANEL = ROOT / "data/processed/exercise_11_product_export_linkage_panel.parquet"
 MAPPING = ROOT / "data/processed/exercise_03_bec5_mapping_approved.csv"
 TABLE_OUT = ROOT / "results/exercise_03_tables/import_bin_goods_country_share_2024.csv"
 FIGURE_DIR = ROOT / "results/exercise_03_figures"
+EXCLUDED_HS6_CODES = {"999999"}
 
 IMPORT_BINS = {
     "energy": "Energy",
@@ -86,6 +87,12 @@ def normalize_code(value: object) -> str:
     return digits.zfill(6) if digits else text
 
 
+def drop_excluded_hs6(df: pd.DataFrame, code_col: str = "cmd_code") -> pd.DataFrame:
+    if df.empty or code_col not in df.columns:
+        return df
+    return df.loc[~df[code_col].map(normalize_code).isin(EXCLUDED_HS6_CODES)].copy()
+
+
 def short_name(row: pd.Series) -> str:
     code = normalize_code(row["cmd_code"])
     if code in SHORT_NAMES:
@@ -97,6 +104,7 @@ def short_name(row: pd.Series) -> str:
 def load_descriptions() -> pd.DataFrame:
     mapping = pd.read_csv(MAPPING, dtype={"cmd_code": str, "classification_code": str})
     mapping["cmd_code"] = mapping["cmd_code"].map(normalize_code)
+    mapping = drop_excluded_hs6(mapping)
     mapping["product_description"] = mapping["hs_desc_official"].fillna("").astype(str).str.strip()
     h6 = mapping[mapping["classification_code"].eq("H6")][["cmd_code", "product_description"]]
     fallback = mapping[["cmd_code", "product_description"]]
@@ -113,6 +121,9 @@ def build_table(year: int) -> pd.DataFrame:
         raise RuntimeError(f"No mapped import-bin rows found for {year}.")
 
     work["cmd_code"] = work["cmd_code"].map(normalize_code)
+    work = drop_excluded_hs6(work)
+    if work.empty:
+        raise RuntimeError(f"No non-excluded mapped import-bin rows found for {year}.")
     reporter_count = work["iso3"].nunique()
     bin_totals = (
         work.groupby(["iso3", "country", "import_bin"], as_index=False)["import_value"]
