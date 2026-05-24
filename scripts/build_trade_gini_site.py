@@ -14,6 +14,7 @@ import json
 import math
 import shutil
 from datetime import datetime, timezone
+from html import escape
 from pathlib import Path
 from typing import Any
 
@@ -32,6 +33,8 @@ SOURCE_FILES = {
     "exercise_3_bins": ROOT / "results/exercise_03_tables/import_bin_concentration.csv",
     "exercise_3_decomposition": ROOT / "results/exercise_03_tables/import_bin_decomposition.csv",
     "exercise_3_total": ROOT / "results/exercise_03_tables/import_total_concentration.csv",
+    "exercise_3_top_goods": ROOT / "results/exercise_03_tables/top_goods_by_import_bin_world_india_2024.csv",
+    "exercise_3_import_bin_goods_share": ROOT / "results/exercise_03_tables/import_bin_goods_country_share_2024.csv",
     "exercise_4_suppliers": ROOT / "results/exercise_04_tables/dominant_supplier_importer_summary.csv",
     "exercise_4_partner_counterfactual_country_year": ROOT / "results/exercise_04_tables/partner_gini_counterfactual_country_year.csv",
     "exercise_4_partner_counterfactual_latest": ROOT / "results/exercise_04_tables/partner_gini_counterfactual_latest.csv",
@@ -54,6 +57,14 @@ SOURCE_FILES = {
 FIGURES = {
     "ex3_value_share": ROOT / "results/exercise_03_figures/median_import_value_share_by_bin.png",
     "ex3_leave_one_out": ROOT / "results/exercise_03_figures/latest_year_gini_reduction_when_bin_excluded.png",
+    "ex3_energy_total_share_hist": ROOT / "results/exercise_03_figures/energy_goods_sum_total_import_share_2024.png",
+    "ex3_energy_bin_share_hist": ROOT / "results/exercise_03_figures/energy_goods_sum_bin_import_share_2024.png",
+    "ex3_intermediates_total_share_hist": ROOT / "results/exercise_03_figures/intermediates_goods_sum_total_import_share_2024.png",
+    "ex3_intermediates_bin_share_hist": ROOT / "results/exercise_03_figures/intermediates_goods_sum_bin_import_share_2024.png",
+    "ex3_capital_goods_total_share_hist": ROOT / "results/exercise_03_figures/capital_goods_goods_sum_total_import_share_2024.png",
+    "ex3_capital_goods_bin_share_hist": ROOT / "results/exercise_03_figures/capital_goods_goods_sum_bin_import_share_2024.png",
+    "ex3_final_consumption_total_share_hist": ROOT / "results/exercise_03_figures/final_consumption_goods_sum_total_import_share_2024.png",
+    "ex3_final_consumption_bin_share_hist": ROOT / "results/exercise_03_figures/final_consumption_goods_sum_bin_import_share_2024.png",
     "ex4_supplier_time": ROOT / "results/exercise_04_figures/dominant_supplier_summary_over_time.png",
     "ex4_supplier_distribution": ROOT / "results/exercise_04_figures/latest_year_top_supplier_share_distribution.png",
     "h24_importer_world_supplier_comparison": ROOT / "results/h24_supplier_specialization_figures/importer_country_vs_world_supplier_dominance.png",
@@ -75,6 +86,8 @@ FIGURES = {
 DOWNLOADS = {
     "exercise_01_concentration_all_years.csv": SOURCE_FILES["exercise_1_panel"],
     "exercise_03_import_bin_concentration.csv": SOURCE_FILES["exercise_3_bins"],
+    "exercise_03_top_goods_by_import_bin_world_india_2024.csv": SOURCE_FILES["exercise_3_top_goods"],
+    "exercise_03_import_bin_goods_country_share_2024.csv": SOURCE_FILES["exercise_3_import_bin_goods_share"],
     "exercise_04_dominant_supplier_importer_summary.csv": SOURCE_FILES["exercise_4_suppliers"],
     "exercise_04_partner_gini_counterfactual_country_year.csv": SOURCE_FILES["exercise_4_partner_counterfactual_country_year"],
     "exercise_04_partner_gini_counterfactual_latest.csv": SOURCE_FILES["exercise_4_partner_counterfactual_latest"],
@@ -111,6 +124,38 @@ BIN_LABELS = {
     "final_consumption": "Final consumption",
     "intermediates": "Intermediates",
     "unmapped_or_ambiguous": "Unmapped or ambiguous",
+}
+PRODUCT_SHORT_NAMES = {
+    "080131": "Cashew nuts in shell",
+    "151110": "Crude palm oil",
+    "220710": "High-strength ethyl alcohol",
+    "270119": "Coal",
+    "270799": "Coal-tar distillation oils",
+    "270900": "Crude petroleum",
+    "271019": "Refined petroleum oils",
+    "271111": "Liquefied natural gas",
+    "271112": "Propane",
+    "271113": "Butanes",
+    "271311": "Petroleum coke, not calcined",
+    "271320": "Petroleum bitumen",
+    "300490": "Medicaments",
+    "710231": "Unworked non-industrial diamonds",
+    "710812": "Unwrought gold",
+    "711319": "Precious-metal jewellery",
+    "847130": "Portable computers/laptops",
+    "847150": "Processing units/servers",
+    "850440": "Static converters",
+    "851713": "Smartphones",
+    "851762": "Network/communication apparatus",
+    "851779": "Telecom apparatus parts",
+    "852589": "Television cameras",
+    "854231": "Processor/controller integrated circuits",
+    "870322": "Petrol cars, 1000-1500cc",
+    "870323": "Petrol cars, 1500-3000cc",
+    "870340": "Hybrid petrol-electric cars",
+    "870380": "Electric vehicles",
+    "880240": "Large aircraft",
+    "999999": "Unspecified commodities",
 }
 HS2_LABELS = {
     "01": "Live animals",
@@ -453,6 +498,92 @@ def table_rows(rows: list[dict[str, Any]], columns: list[tuple[str, str, str]]) 
     return f"<table><thead><tr>{head}</tr></thead><tbody>{''.join(body)}</tbody></table>"
 
 
+def pct_points(value: Any, digits: int = 1) -> str:
+    if value is None or not math.isfinite(float(value)):
+        return "n/a"
+    return f"{float(value):.{digits}f}%"
+
+
+def money_billions(value: Any) -> str:
+    if value is None or not math.isfinite(float(value)):
+        return "n/a"
+    value = float(value)
+    if abs(value) >= 1000:
+        return f"${value / 1000:.2f}T"
+    return f"${value:.1f}B"
+
+
+def normalize_hs6(value: Any) -> str:
+    text = "" if value is None else str(value).strip()
+    if text.endswith(".0"):
+        text = text[:-2]
+    digits = "".join(ch for ch in text if ch.isdigit())
+    return digits.zfill(6) if digits else text
+
+
+def product_name(row: dict[str, Any]) -> str:
+    code = normalize_hs6(row.get("cmd_code"))
+    fallback = str(row.get("desc") or "").strip()
+    if code in PRODUCT_SHORT_NAMES:
+        return PRODUCT_SHORT_NAMES[code]
+    return fallback if len(fallback) <= 86 else fallback[:83].rstrip() + "..."
+
+
+def top_goods_cards(rows: list[dict[str, Any]], max_rank: int = 3) -> str:
+    scope_labels = {
+        "Pooled sample 2024": "World sample",
+        "India 2024": "India",
+    }
+    articles: list[str] = []
+    for import_bin in BIN_LABELS:
+        scope_blocks: list[str] = []
+        for scope, label in scope_labels.items():
+            subset = [
+                row
+                for row in rows
+                if row.get("import_bin") == import_bin
+                and row.get("scope") == scope
+                and int(row.get("rank_in_bin") or 0) <= max_rank
+            ]
+            subset = sorted(subset, key=lambda row: int(row.get("rank_in_bin") or 0))
+            items = []
+            for row in subset:
+                code = normalize_hs6(row.get("cmd_code"))
+                title = escape(str(row.get("desc") or product_name(row)))
+                name = escape(product_name(row))
+                items.append(
+                    "<li>"
+                    f'<span title="{title}"><code>{escape(code)}</code> {name}</span>'
+                    f"<small>{money_billions(row.get('import_value_usd_bn'))}; "
+                    f"{pct_points(row.get('share_of_bin_pct'))} of bin</small>"
+                    "</li>"
+                )
+            scope_blocks.append(
+                "<div>"
+                f"<h4>{escape(label)}</h4>"
+                f"<ol>{''.join(items)}</ol>"
+                "</div>"
+            )
+        articles.append(
+            '<article class="top-goods-card">'
+            f"<h3>{escape(BIN_LABELS[import_bin])}</h3>"
+            f'<div class="top-goods-columns">{"".join(scope_blocks)}</div>'
+            "</article>"
+        )
+    return f"""
+      <div class="top-goods-block">
+        <div class="top-goods-head">
+          <h3>Top goods behind each import bin</h3>
+          <p>2024 HS6 products ranked by import value within each bin. The world column pools the 32 reporter countries available in the site sample for 2024; the downloadable CSV keeps the top five rows per bin.</p>
+        </div>
+        <div class="top-goods-grid">
+          {"".join(articles)}
+        </div>
+        <p class="source-note"><a href="assets/downloads/exercise_03_top_goods_by_import_bin_world_india_2024.csv">Download the top-five goods table</a>.</p>
+      </div>
+    """
+
+
 def evidence_links(items: list[tuple[str, str]]) -> str:
     return "".join(f'<a href="{href}">{label}</a>' for label, href in items)
 
@@ -551,6 +682,7 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
     bins = read_csv("exercise_3_bins")
     decomp = read_csv("exercise_3_decomposition")
     total_import = read_csv("exercise_3_total")
+    top_goods = read_csv("exercise_3_top_goods")
     suppliers = read_csv("exercise_4_suppliers")
     h24_supplier_summary = read_csv("h24_supplier_summary")
     h24_supplier_comparison = read_csv("h24_supplier_comparison")
@@ -566,6 +698,24 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
     hs2_regressions = read_csv("exercise_11_hs2_regressions")
     commodity_comparison = read_csv("exercise_11_commodity_comparison")
     commodity_stats = read_csv("exercise_11_commodity_stats")
+
+    require_columns(
+        top_goods,
+        "Exercise 3 top goods",
+        {
+            "scope",
+            "import_bin",
+            "rank_in_bin",
+            "cmd_code",
+            "desc",
+            "import_value_usd_bn",
+            "share_of_bin_pct",
+            "share_of_total_pct",
+        },
+    )
+    top_goods["cmd_code"] = top_goods["cmd_code"].map(normalize_hs6)
+    for column in ["rank_in_bin", "import_value_usd_bn", "share_of_bin_pct", "share_of_total_pct"]:
+        top_goods[column] = pd.to_numeric(top_goods[column], errors="coerce")
 
     required_nonempty = {
         name: len(read_csv(name))
@@ -894,6 +1044,19 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
         "exercise3": {
             "bin_summary": clean_records(bin_summary, list(bin_summary.columns)),
             "total_import_summary": {key: clean_scalar(value) for key, value in total_import_summary.items()},
+            "top_goods": clean_records(
+                top_goods.sort_values(["scope", "import_bin", "rank_in_bin"]),
+                [
+                    "scope",
+                    "import_bin",
+                    "rank_in_bin",
+                    "cmd_code",
+                    "desc",
+                    "import_value_usd_bn",
+                    "share_of_bin_pct",
+                    "share_of_total_pct",
+                ],
+            ),
         },
         "exercise4": {
             "summary": {key: clean_scalar(value) for key, value in supplier_summary.items()},
@@ -1326,6 +1489,7 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
                 ("active_products", "Active HS6 products", "int"),
             ],
         ),
+        "top_goods_by_bin": top_goods_cards(ex3["top_goods"]),
         "supplier_text": (
             "There are two different supplier-dominance concepts. Exercise 4 is country-specific: within an "
             "importer-country and HS6 product, it asks how much that country buys from its largest source. H2.4 is "
@@ -1663,6 +1827,32 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
         <p><strong>Import value share</strong> means the bin's share of a country's total import value in a country-year. <strong>Product Gini within bin</strong> measures concentration across HS6 products inside that bin. <strong>Top-1 product share</strong> is the largest HS6 product's share of that bin. <strong>Leave-one-out Gini effect</strong> is the change in overall import Product Gini when the bin is removed; positive values mean the bin raises concentration.</p>
       </div>
       <div id="import-bin-chart" class="chart"></div>
+      {context["top_goods_by_bin"]}
+      <h3 class="subsection-title">Goods inside each import bin</h3>
+      <div class="note">
+        <p><strong>Goods histograms:</strong> each bar is one HS6 good in the named bin in 2024, sorted by its summed contribution across countries. The blue figure sums each good's share of each country's total import value. The green figure sums each good's share of each country's imports inside that bin. A height of 100 percentage points is equivalent to one full country-share after summing across countries.</p>
+        <p><a href="assets/downloads/exercise_03_import_bin_goods_country_share_2024.csv">Download the full ranked goods table for all four bins</a>.</p>
+      </div>
+      <h4 class="subsection-title">Energy</h4>
+      <div class="figure-row">
+        <figure><a class="figure-link" href="assets/figures/ex3_energy_total_share_hist.png"><img src="assets/figures/ex3_energy_total_share_hist.png" alt="Energy goods by summed share of all imports"></a><figcaption>Energy HS6 goods, with bar height equal to the sum across countries of that good's share of total imports.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/ex3_energy_bin_share_hist.png"><img src="assets/figures/ex3_energy_bin_share_hist.png" alt="Energy goods by summed share of energy imports"></a><figcaption>Same energy goods, but each country's denominator is energy imports only.</figcaption></figure>
+      </div>
+      <h4 class="subsection-title">Intermediates</h4>
+      <div class="figure-row">
+        <figure><a class="figure-link" href="assets/figures/ex3_intermediates_total_share_hist.png"><img src="assets/figures/ex3_intermediates_total_share_hist.png" alt="Intermediate goods by summed share of all imports"></a><figcaption>Intermediate HS6 goods, with bar height equal to the sum across countries of that good's share of total imports.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/ex3_intermediates_bin_share_hist.png"><img src="assets/figures/ex3_intermediates_bin_share_hist.png" alt="Intermediate goods by summed share of intermediate imports"></a><figcaption>Same intermediate goods, but each country's denominator is intermediate imports only.</figcaption></figure>
+      </div>
+      <h4 class="subsection-title">Capital goods</h4>
+      <div class="figure-row">
+        <figure><a class="figure-link" href="assets/figures/ex3_capital_goods_total_share_hist.png"><img src="assets/figures/ex3_capital_goods_total_share_hist.png" alt="Capital goods by summed share of all imports"></a><figcaption>Capital-goods HS6 products, with bar height equal to the sum across countries of that good's share of total imports.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/ex3_capital_goods_bin_share_hist.png"><img src="assets/figures/ex3_capital_goods_bin_share_hist.png" alt="Capital goods by summed share of capital-goods imports"></a><figcaption>Same capital goods, but each country's denominator is capital-goods imports only.</figcaption></figure>
+      </div>
+      <h4 class="subsection-title">Final consumption</h4>
+      <div class="figure-row">
+        <figure><a class="figure-link" href="assets/figures/ex3_final_consumption_total_share_hist.png"><img src="assets/figures/ex3_final_consumption_total_share_hist.png" alt="Final-consumption goods by summed share of all imports"></a><figcaption>Final-consumption HS6 goods, with bar height equal to the sum across countries of that good's share of total imports.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/ex3_final_consumption_bin_share_hist.png"><img src="assets/figures/ex3_final_consumption_bin_share_hist.png" alt="Final-consumption goods by summed share of final-consumption imports"></a><figcaption>Same final-consumption goods, but each country's denominator is final-consumption imports only.</figcaption></figure>
+      </div>
       {context["bin_table"]}
       <div class="figure-row">
         <figure><a class="figure-link" href="assets/figures/ex3_value_share.png"><img src="assets/figures/ex3_value_share.png" alt="Median import value share by bin"></a><figcaption>Median import value share by BEC-style bin.</figcaption></figure>
@@ -2201,6 +2391,84 @@ button:hover { border-color: var(--accent); }
   margin: 14px 0;
 }
 .chart.tall { min-height: 560px; }
+.top-goods-block {
+  margin: 18px 0 22px;
+}
+.top-goods-head {
+  display: grid;
+  grid-template-columns: minmax(220px, 0.45fr) minmax(260px, 1fr);
+  gap: 18px;
+  align-items: start;
+  margin-bottom: 12px;
+}
+.top-goods-head h3 {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+}
+.top-goods-head p, .source-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14px;
+}
+.source-note {
+  margin-top: 10px;
+}
+.source-note a {
+  color: var(--accent-dark);
+  font-weight: 600;
+}
+.top-goods-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.top-goods-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  box-shadow: var(--shadow);
+}
+.top-goods-card h3 {
+  margin: 0 0 10px;
+  color: var(--accent-dark);
+  font-size: 16px;
+}
+.top-goods-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.top-goods-columns h4 {
+  margin: 0 0 6px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.top-goods-columns ol {
+  margin: 0;
+  padding-left: 20px;
+}
+.top-goods-columns li {
+  margin: 0 0 8px;
+  color: var(--ink);
+  font-size: 13px;
+}
+.top-goods-columns li span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.top-goods-columns code {
+  color: var(--accent-dark);
+  font-size: 12px;
+}
+.top-goods-columns small {
+  display: block;
+  color: var(--muted);
+  margin-top: 2px;
+}
 .chart-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2312,7 +2580,7 @@ figcaption {
 @media (max-width: 860px) {
   .header-inner, .tool-header, .section-heading { display: block; }
   nav { justify-content: flex-start; margin-top: 12px; }
-  .stat-grid, .two-col, .link-grid, .hypothesis-grid, .result-ladder, .interpretation-grid, .next-step-grid, .tool-grid, .figure-row, .chart-grid, .download-grid {
+  .stat-grid, .two-col, .link-grid, .hypothesis-grid, .result-ladder, .interpretation-grid, .next-step-grid, .tool-grid, .figure-row, .chart-grid, .download-grid, .top-goods-head, .top-goods-grid, .top-goods-columns {
     grid-template-columns: 1fr;
   }
   .hero h1, .page-title h1 { font-size: 32px; }
