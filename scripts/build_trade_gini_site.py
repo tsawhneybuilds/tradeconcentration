@@ -155,7 +155,6 @@ PRODUCT_SHORT_NAMES = {
     "870340": "Hybrid petrol-electric cars",
     "870380": "Electric vehicles",
     "880240": "Large aircraft",
-    "999999": "Unspecified commodities",
 }
 HS2_LABELS = {
     "01": "Live animals",
@@ -714,6 +713,7 @@ def build_data() -> tuple[dict[str, Any], dict[str, str]]:
         },
     )
     top_goods["cmd_code"] = top_goods["cmd_code"].map(normalize_hs6)
+    top_goods = top_goods[~top_goods["cmd_code"].eq("999999")].copy()
     for column in ["rank_in_bin", "import_value_usd_bn", "share_of_bin_pct", "share_of_total_pct"]:
         top_goods[column] = pd.to_numeric(top_goods[column], errors="coerce")
 
