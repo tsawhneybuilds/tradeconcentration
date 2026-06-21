@@ -58,22 +58,22 @@ I would not claim:
 
 Each link below answers one question.
 
-1. **Does pooled modern product concentration bend upward at high income?**  
+1. **Does pooled modern product concentration bend upward at high income?**
    [Gini and Theil with linear, quadratic, and nonparametric fits](../samples/cadot_broad_156/cadot_broad_ppp_hump_regression_figures/export_gini_theil_linear_quadratic_lowess.png)
 
-2. **Does the historical partner panel pass a formal U-shape test?**  
+2. **Does the historical partner panel pass a formal U-shape test?**
    [No baseline partner measure passes](../historical_partner_concentration/figures/advisor/baseline_u_shape_tests.png)
 
-3. **How do pooled and country-fixed-effect results differ?**  
+3. **How do pooled and country-fixed-effect results differ?**
    [PPP hump results](https://tsawhneybuilds.github.io/trade-gini-map-old/cadot-hump.html#cadot-ppp-results) and [pooled versus country fixed effects](https://tsawhneybuilds.github.io/trade-gini-map-old/cadot-hump.html#cadot-pooled-country-fe)
 
-4. **What mechanism is most common in modern reconcentration episodes?**  
+4. **What mechanism is most common in modern reconcentration episodes?**
    [Mechanism scorecard](https://tsawhneybuilds.github.io/trade-gini-map-old/cadot-hump.html#cadot-mechanisms) and [old-cone evidence](https://tsawhneybuilds.github.io/trade-gini-map-old/cadot-hump.html#cadot-old-cone)
 
-5. **Do larger economies align more closely with globally large products?**  
+5. **Do larger economies align more closely with globally large products?**
    [World-product exposure and alignment panels](https://tsawhneybuilds.github.io/trade-gini-map/exposure/#exposure-gdp-alignment)
 
-6. **Is partner concentration moving strongly over time in the modern panel?**  
+6. **Is partner concentration moving strongly over time in the modern panel?**
    [Partner-stability common-trend evidence](https://tsawhneybuilds.github.io/trade-gini-map-old/partner-stability.html#partner-stability-common-trend)
 
 ## Economist-council verdict
