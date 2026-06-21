@@ -621,6 +621,129 @@ CADOT_BROAD_PPP_FIGURE_FILES = {
     "cadot_broad_ppp_hump_log": CADOT_BROAD_PPP_FIGURE_DIR / "ppp_hump_diagnostics_log_ppp_five_outcomes.png",
 }
 
+CADOT_BROAD_TRIBUNAL_DIR = (
+    ROOT / "results" / "samples" / "cadot_broad_156" / "cadot_hump_tribunal_tables"
+)
+CADOT_BROAD_TRIBUNAL_FIGURE_DIR = (
+    ROOT / "results" / "samples" / "cadot_broad_156" / "cadot_hump_tribunal_figures"
+)
+CADOT_INTEGRATED_TABLE_FILES = {
+    "cadot_production_core_models": (
+        ROOT
+        / "results"
+        / "prof_p_replication"
+        / "cadot_production_core_sensitivity"
+        / "production_core_model_summary.csv"
+    ),
+    "cadot_production_core_country_classification": (
+        ROOT
+        / "results"
+        / "prof_p_replication"
+        / "cadot_production_core_sensitivity"
+        / "country_exclusion_classification.csv"
+    ),
+    "cadot_between_within_variance": (
+        ROOT
+        / "results"
+        / "prof_p_replication"
+        / "cadot_between_country_diagnostics"
+        / "between_within_variance_decomposition.csv"
+    ),
+    "cadot_historical_preferred_within": (
+        ROOT
+        / "results"
+        / "historical_partner_concentration"
+        / "advisor_preferred_within_results.csv"
+    ),
+    "cadot_historical_model_summary": (
+        ROOT / "results" / "historical_partner_concentration" / "cadot_model_summary.csv"
+    ),
+    "cadot_broad_mechanism_summary": CADOT_BROAD_TRIBUNAL_DIR / "mechanism_scorecard_summary.csv",
+    "cadot_broad_old_cone_models": CADOT_BROAD_TRIBUNAL_DIR / "old_cone_exit_models.csv",
+    "cadot_broad_tribunal_validation": CADOT_BROAD_TRIBUNAL_DIR / "validation_checks.csv",
+}
+CADOT_INTEGRATED_FIGURE_FILES = {
+    "cadot_export_gini_theil_fits": (
+        CADOT_BROAD_PPP_FIGURE_DIR / "export_gini_theil_linear_quadratic_lowess.png"
+    ),
+    "cadot_historical_baseline_u_shape": (
+        ROOT
+        / "results"
+        / "historical_partner_concentration"
+        / "figures"
+        / "advisor"
+        / "baseline_u_shape_tests.png"
+    ),
+    "cadot_historical_sensitivity": (
+        ROOT
+        / "results"
+        / "historical_partner_concentration"
+        / "figures"
+        / "advisor"
+        / "within_u_shape_sensitivity.png"
+    ),
+    "cadot_broad_mechanism_scorecard": (
+        CADOT_BROAD_TRIBUNAL_FIGURE_DIR / "mechanism_scorecard.png"
+    ),
+    "cadot_broad_old_cone_exit": (
+        CADOT_BROAD_TRIBUNAL_FIGURE_DIR / "old_cone_exit_plot.png"
+    ),
+}
+CADOT_INTEGRATED_EXTRA_DOWNLOADS = {
+    "cadot-replication.md": ROOT / "cadot-replication.md",
+    "cadot_final_interpretation_report.md": (
+        ROOT / "results" / "prof_p_replication" / "cadot_final_interpretation_report.md"
+    ),
+    "cadot_production_core_sensitivity.md": (
+        ROOT / "results" / "prof_p_replication" / "cadot_production_core_sensitivity.md"
+    ),
+    "historical_partner_concentration_advisor_memo.md": (
+        ROOT
+        / "results"
+        / "historical_partner_concentration"
+        / "historical_partner_concentration_advisor_memo.md"
+    ),
+    "historical_partner_concentration_adversarial_review.md": (
+        ROOT / "results" / "historical_partner_concentration" / "adversarial_review.md"
+    ),
+    "historical_partner_concentration_run_manifest.json": (
+        ROOT / "results" / "historical_partner_concentration" / "run_manifest.json"
+    ),
+    "cadot_production_core_manifest.json": (
+        ROOT
+        / "results"
+        / "prof_p_replication"
+        / "cadot_production_core_sensitivity"
+        / "manifest.json"
+    ),
+    "cadot_broad_tribunal_adversarial_review.md": (
+        ROOT
+        / "results"
+        / "samples"
+        / "cadot_broad_156"
+        / "cadot_hump_tribunal_adversarial_review.md"
+    ),
+    "cadot_broad_tribunal_run_manifest.json": (
+        ROOT
+        / "results"
+        / "samples"
+        / "cadot_broad_156"
+        / "run_manifest_cadot_hump_tribunal.json"
+    ),
+}
+CADOT_INTEGRATED_DOWNLOAD_FILENAMES = {
+    "cadot_production_core_model_summary.csv": "cadot_production_core_models",
+    "cadot_production_core_country_classification.csv": (
+        "cadot_production_core_country_classification"
+    ),
+    "cadot_between_within_variance_decomposition.csv": "cadot_between_within_variance",
+    "historical_partner_preferred_within_results.csv": "cadot_historical_preferred_within",
+    "historical_partner_cadot_model_summary.csv": "cadot_historical_model_summary",
+    "cadot_broad_mechanism_scorecard_summary.csv": "cadot_broad_mechanism_summary",
+    "cadot_broad_old_cone_exit_models.csv": "cadot_broad_old_cone_models",
+    "cadot_broad_tribunal_validation_checks.csv": "cadot_broad_tribunal_validation",
+}
+
 IMPORT_ENERGY_GINI_TABLE_FILES = {
     "energy_gini_driver_classification_balanced": Path(
         "import_energy_gini_diagnostics/ex_energy_rank_bucket_gini_driver_classification_balanced_2000_2024.csv"
@@ -931,7 +1054,7 @@ def include_ex12_ev_hs6_harmonized_expansion() -> bool:
 
 
 def include_cadot_hump_page() -> bool:
-    return ACTIVE_SITE_SAMPLE == "rd2_countries"
+    return ACTIVE_SITE_SAMPLE in {"rd2_countries", "cadot_broad_156"}
 
 
 def is_world_relative_artifact_name(name: str) -> bool:
@@ -1328,6 +1451,25 @@ def configure_site_sample(country_sample: str) -> None:
             }
         )
         DOWNLOADS.update(CADOT_BROAD_PPP_EXTRA_DOWNLOADS)
+    if country_sample == "cadot_broad_156":
+        SOURCE_FILES.update(CADOT_BROAD_PPP_TABLE_FILES)
+        SOURCE_FILES.update(CADOT_INTEGRATED_TABLE_FILES)
+        FIGURES.update(CADOT_BROAD_PPP_FIGURE_FILES)
+        FIGURES.update(CADOT_INTEGRATED_FIGURE_FILES)
+        DOWNLOADS.update(
+            {
+                filename: CADOT_BROAD_PPP_TABLE_FILES[source_key]
+                for filename, source_key in CADOT_BROAD_PPP_DOWNLOAD_FILENAMES.items()
+            }
+        )
+        DOWNLOADS.update(CADOT_BROAD_PPP_EXTRA_DOWNLOADS)
+        DOWNLOADS.update(
+            {
+                filename: CADOT_INTEGRATED_TABLE_FILES[source_key]
+                for filename, source_key in CADOT_INTEGRATED_DOWNLOAD_FILENAMES.items()
+            }
+        )
+        DOWNLOADS.update(CADOT_INTEGRATED_EXTRA_DOWNLOADS)
     import_energy_gini_sources = import_energy_gini_source_paths(country_sample)
     if import_energy_gini_sources:
         SOURCE_FILES.update(import_energy_gini_sources)
@@ -4541,9 +4683,503 @@ def load_ex12_ev_hs6_harmonized_expansion_data() -> dict[str, Any]:
     }
 
 
+def load_cadot_integrated_data() -> dict[str, Any]:
+    broad_ppp_summary = read_csv("cadot_broad_ppp_hump_summary")
+    broad_ppp_attrition = read_csv("cadot_broad_ppp_sample_attrition")
+    production_core = read_csv("cadot_production_core_models")
+    production_countries = read_csv("cadot_production_core_country_classification")
+    between_within = read_csv("cadot_between_within_variance")
+    historical_preferred = read_csv("cadot_historical_preferred_within")
+    historical_models = read_csv("cadot_historical_model_summary")
+    mechanism_summary = read_csv("cadot_broad_mechanism_summary")
+    old_cone_models = read_csv("cadot_broad_old_cone_models")
+    tribunal_validation = read_csv("cadot_broad_tribunal_validation")
+
+    require_columns(
+        production_core,
+        "Cadot production-core sensitivity",
+        {
+            "variant",
+            "outcome",
+            "outcome_label",
+            "estimator",
+            "income_form",
+            "countries",
+            "turning_point_ppp_constant_2021_intl_usd",
+            "turning_point_inside_p05_p95",
+            "intersection_union_endpoint_p",
+            "countries_above_turning_point",
+        },
+    )
+    require_columns(
+        historical_preferred,
+        "Historical partner preferred within results",
+        {
+            "flow",
+            "metric_name",
+            "observations",
+            "entity_count",
+            "slope_p05",
+            "slope_p95",
+            "u_test_p_value",
+            "u_test_q_value",
+            "classification",
+        },
+    )
+    require_columns(
+        historical_models,
+        "Historical partner model summary",
+        {
+            "variant",
+            "income_form",
+            "sample_policy",
+            "model_name",
+            "curve_component",
+            "classification",
+        },
+    )
+    require_columns(
+        between_within,
+        "Cadot between-within variance decomposition",
+        {
+            "outcome_label",
+            "observations",
+            "countries",
+            "between_share_total_sum_of_squares",
+            "within_share_total_sum_of_squares",
+        },
+    )
+    require_columns(
+        mechanism_summary,
+        "Cadot broad mechanism summary",
+        {"mechanism", "reconcentration_episodes", "flagged_episodes", "flagged_share"},
+    )
+    require_columns(
+        old_cone_models,
+        "Cadot broad old-cone models",
+        {"term", "coef", "std_error", "p_value", "nobs", "clusters", "primary_spec"},
+    )
+    require_columns(
+        tribunal_validation,
+        "Cadot broad tribunal validation",
+        {"check", "value", "status"},
+    )
+
+    text_cols = {
+        "variant",
+        "outcome",
+        "outcome_label",
+        "expected_shape",
+        "estimator",
+        "income_form",
+        "flow",
+        "metric_name",
+        "classification",
+        "slope_sign_pattern",
+        "mechanism",
+        "term",
+        "model_label",
+        "status",
+        "check",
+        "country",
+        "iso3",
+        "exclusion_reasons",
+    }
+    broad_ppp_summary = numeric_columns(broad_ppp_summary, text_cols | {"outcome_slug", "verdict"})
+    broad_ppp_attrition = numeric_columns(broad_ppp_attrition, text_cols | {"outcome_slug"})
+    production_core = numeric_columns(production_core, text_cols)
+    production_countries = numeric_columns(production_countries, text_cols)
+    between_within = numeric_columns(between_within, text_cols)
+    historical_preferred = numeric_columns(historical_preferred, text_cols)
+    historical_models = numeric_columns(
+        historical_models,
+        text_cols
+        | {
+            "income_form",
+            "sample_policy",
+            "model_name",
+            "curve_component",
+            "linear_term_name",
+            "square_term_name",
+            "excluded_entity_id",
+        },
+    )
+    mechanism_summary = numeric_columns(mechanism_summary, text_cols)
+    old_cone_models = numeric_columns(
+        old_cone_models,
+        text_cols | {"outcome", "fixed_effects", "cluster_col", "prody_spec", "mismatch_definition"},
+    )
+    tribunal_validation = numeric_columns(tribunal_validation, text_cols)
+
+    production_display = production_core[
+        production_core["variant"].eq("production_core")
+        & production_core["income_form"].eq("level_ppp")
+        & production_core["estimator"].isin(["between_country", "country_year_fe"])
+    ].copy()
+    production_display["p_value"] = production_display["intersection_union_endpoint_p"]
+    production_display["estimator_label"] = production_display["estimator"].map(
+        {
+            "between_country": "between countries",
+            "country_year_fe": "country + year FE",
+        }
+    )
+    production_display["inside_support"] = np.where(
+        production_display["turning_point_inside_p05_p95"], "yes", "no"
+    )
+    production_display["result"] = np.where(
+        (production_display["intersection_union_endpoint_p"] < 0.05)
+        & production_display["turning_point_inside_p05_p95"],
+        np.where(
+            production_display["expected_shape"].eq("count_inverted_u"),
+            "supported inverted U",
+            "supported U-shape",
+        ),
+        "not supported",
+    )
+    primary_old_cone = old_cone_models[old_cone_models["primary_spec"].astype(bool)].copy()
+    production_kept = production_countries[production_countries["production_core_keep"].astype(bool)].copy()
+    historical_sensitivity = historical_models[
+        historical_models["model_name"].eq("entity_year_fe_logpop")
+        & historical_models["curve_component"].eq("within")
+        & historical_models["income_form"].eq("gdppc_10k")
+        & historical_models["sample_policy"].eq("fixed")
+    ].copy()
+
+    return {
+        "broad_ppp_hump_summary": clean_records(
+            broad_ppp_summary, list(broad_ppp_summary.columns)
+        ),
+        "broad_ppp_sample_attrition": clean_records(
+            broad_ppp_attrition, list(broad_ppp_attrition.columns)
+        ),
+        "production_core_models": clean_records(
+            production_display, list(production_display.columns)
+        ),
+        "production_core_country_count": int(production_kept["iso3"].nunique()),
+        "between_within_variance": clean_records(
+            between_within, list(between_within.columns)
+        ),
+        "historical_preferred_within": clean_records(
+            historical_preferred, list(historical_preferred.columns)
+        ),
+        "historical_sensitivity_test_count": int(len(historical_sensitivity)),
+        "historical_supported_u_shape_count": int(
+            historical_sensitivity["classification"].eq("supported_u_shape").sum()
+        ),
+        "mechanism_summary": clean_records(
+            mechanism_summary, list(mechanism_summary.columns)
+        ),
+        "old_cone_models": clean_records(
+            primary_old_cone, list(primary_old_cone.columns)
+        ),
+        "tribunal_validation": clean_records(
+            tribunal_validation, list(tribunal_validation.columns)
+        ),
+    }
+
+
+def build_cadot_integrated_body(data: dict[str, Any]) -> str:
+    estimator_labels = {
+        "pooled_year_fe": "pooled + year FE",
+        "between_country": "between countries",
+        "country_year_fe": "country + year FE",
+    }
+    outcome_order = {
+        "export_product_gini": 0,
+        "export_product_theil": 1,
+        "export_product_hhi": 2,
+        "export_active_product_count": 3,
+    }
+    estimator_order = {key: index for index, key in enumerate(estimator_labels)}
+    broad_rows = []
+    for row in data.get("broad_ppp_hump_summary", []):
+        if row.get("income_form") != "level_ppp":
+            continue
+        if row.get("outcome_slug") not in outcome_order:
+            continue
+        broad_rows.append(
+            {
+                **row,
+                "estimator_label": estimator_labels.get(
+                    str(row.get("estimator")), str(row.get("estimator"))
+                ),
+                "p_value": row.get("quadratic_p_value"),
+                "inside_support": (
+                    "yes" if row.get("turning_point_inside_p05_p95") else "no"
+                ),
+                "country_count": (
+                    row.get("nobs")
+                    if row.get("estimator") == "between_country"
+                    else row.get("clusters")
+                ),
+                "sort_key": (
+                    outcome_order.get(str(row.get("outcome_slug")), 99),
+                    estimator_order.get(str(row.get("estimator")), 99),
+                ),
+            }
+        )
+    broad_rows = sorted(broad_rows, key=lambda row: row["sort_key"])
+    broad_table = table_rows(
+        broad_rows,
+        [
+            ("outcome_label", "Outcome", "text"),
+            ("estimator_label", "Estimator", "text"),
+            ("quadratic_coefficient", "Quadratic coef.", "dec"),
+            ("p_value", "Raw p-value", "dec"),
+            (
+                "turning_point_ppp_constant_2021_intl_usd",
+                "Turning point",
+                "money",
+            ),
+            ("inside_support", "Inside p05-p95", "text"),
+            ("verdict", "Result", "text"),
+            ("nobs", "N", "int"),
+            ("country_count", "Countries", "int"),
+        ],
+    )
+
+    variance_rows = []
+    for row in data.get("between_within_variance", []):
+        variance_rows.append(
+            {
+                **row,
+                "between_share": row.get(
+                    "between_share_total_sum_of_squares"
+                ),
+                "within_share": row.get("within_share_total_sum_of_squares"),
+            }
+        )
+    variance_table = table_rows(
+        variance_rows,
+        [
+            ("outcome_label", "Export outcome", "text"),
+            ("between_share", "Between-country share", "pct"),
+            ("within_share", "Within-country share", "pct"),
+            ("observations", "N", "int"),
+            ("countries", "Countries", "int"),
+        ],
+    )
+
+    production_rows = sorted(
+        data.get("production_core_models", []),
+        key=lambda row: (
+            outcome_order.get(str(row.get("outcome")), 99),
+            estimator_order.get(str(row.get("estimator")), 99),
+        ),
+    )
+    production_table = table_rows(
+        production_rows,
+        [
+            ("outcome_label", "Outcome", "text"),
+            ("estimator_label", "Estimator", "text"),
+            ("result", "Endpoint test", "text"),
+            ("p_value", "IUT p-value", "dec"),
+            (
+                "turning_point_ppp_constant_2021_intl_usd",
+                "Turning point/peak",
+                "money",
+            ),
+            ("inside_support", "Inside p05-p95", "text"),
+            ("countries_above_turning_point", "Countries above", "int"),
+            ("countries", "Countries", "int"),
+        ],
+    )
+
+    historical_rows = []
+    for row in data.get("historical_preferred_within", []):
+        historical_rows.append(
+            {
+                **row,
+                "p_value": row.get("u_test_p_value"),
+                "q_value": row.get("u_test_q_value"),
+                "turning_point": row.get("turning_point_ppp_2011_usd"),
+            }
+        )
+    historical_table = table_rows(
+        historical_rows,
+        [
+            ("flow", "Flow", "text"),
+            ("metric_name", "Partner measure", "text"),
+            ("slope_sign_pattern", "Endpoint slopes", "text"),
+            ("turning_point", "Stationary point", "money"),
+            ("p_value", "Wild-bootstrap p", "dec"),
+            ("q_value", "BH q-value", "dec"),
+            ("classification", "Classification", "text"),
+            ("observations", "N", "int"),
+            ("entity_count", "Entities", "int"),
+        ],
+    )
+
+    mechanism_rows = [
+        {
+            **row,
+            "mechanism_label": str(row.get("mechanism", "")).replace("_", " "),
+        }
+        for row in data.get("mechanism_summary", [])
+    ]
+    mechanism_table = table_rows(
+        mechanism_rows,
+        [
+            ("mechanism_label", "Mechanism flag", "text"),
+            ("reconcentration_episodes", "Episodes", "int"),
+            ("flagged_episodes", "Flagged", "int"),
+            ("flagged_share", "Share", "pct"),
+        ],
+    )
+    old_cone_table = table_rows(
+        data.get("old_cone_models", []),
+        [
+            ("term", "Old-cone exit-model term", "text"),
+            ("coef", "Coefficient", "dec"),
+            ("std_error", "Clustered SE", "dec"),
+            ("p_value", "Raw p-value", "dec"),
+            ("nobs", "Product windows", "int"),
+            ("clusters", "Reporter clusters", "int"),
+        ],
+    )
+
+    production_country_count = int(data.get("production_core_country_count") or 0)
+    historical_test_count = int(data.get("historical_sensitivity_test_count") or 0)
+    historical_supported = int(data.get("historical_supported_u_shape_count") or 0)
+
+    return f"""
+    <section class="page-title">
+      <div class="eyebrow">Replication, reinterpretation, and boundary tests</div>
+      <h1>Cadot Diversification Hump: Combined Results</h1>
+      <p>This page combines the modern 156-reporter reconstruction, pooled-versus-within tests, production-core exclusions, mechanism exercises, and the 1827-2014 historical partner-concentration boundary test.</p>
+    </section>
+
+    <section class="section" id="cadot-interpretation-results">
+      <div class="section-heading">
+        <h2>Interpretation and Results</h2>
+        <p>The evidence refines Cadot rather than delivering a binary replication verdict.</p>
+      </div>
+      <div class="result-ladder">
+        <article><span>Modern products</span><strong>Cross-country hump</strong><p>Level-PPP product curvature is strongest between countries.</p></article>
+        <article><span>Within countries</span><strong>No robust law</strong><p>Country fixed effects remove the broad export Gini and Theil humps.</p></article>
+        <article><span>Production core</span><strong>Theil, HHI, counts survive</strong><p>Active-product Gini does not; log-income forms do not.</p></article>
+        <article><span>Mechanism</span><strong>Continuing-product scaling</strong><p>72.2% of broad-sample reconcentration episodes carry this flag.</p></article>
+        <article><span>Historical partners</span><strong>{historical_supported}/{historical_test_count} supported</strong><p>No 1827-2014 within-country partner U-shape survives the sensitivity grid.</p></article>
+      </div>
+      <div class="interpretation-grid">
+        <article class="note">
+          <h3>What survives</h3>
+          <p>Modern product concentration declines with development and bends upward in the rich-country cross section. Between-country differences account for 73.2% of Export Product Gini variation, 94.1% of Theil variation, and 81.1% of HHI variation.</p>
+          <p>After removing microstates, major oil exporters, and finance, tax-conduit, offshore, and re-export hubs, the level-PPP between-country hump remains for fixed-universe Theil, HHI, and active-product counts. The Theil/count turning point is about $46,000, with 12 of {production_country_count} countries, or 14.5%, above it—close to Cadot's 21 of 141 countries, or 14.9%.</p>
+        </article>
+        <article class="note">
+          <h3>What does not survive</h3>
+          <p>The modern export Gini and Theil humps do not survive country fixed effects in the broad sample. The production-core active-product Gini has no supported cross-country U-shape, and none of the four production-core outcomes passes the endpoint test under log GDP per capita.</p>
+          <p>The historical exercise is across trading partners, not products. It rules out a generic law that development eventually reconcentrates trade, but it does not constitute a historical product-level replication of Cadot.</p>
+        </article>
+      </div>
+      <div class="note">
+        <p><strong>Current econometric interpretation:</strong> Cadot captures a real equilibrium relationship across country types in product space. Our evidence does not support a universal within-country development sequence or a predominantly extensive-margin exit mechanism. Persistent differences in scale, comparative advantage, sectoral specialization, global-product demand, institutions, and trade-hub status explain much of the pooled shape.</p>
+      </div>
+      <div class="figure-row full-width">
+        <figure><a class="figure-link" href="assets/figures/cadot_export_gini_theil_fits.png"><img src="assets/figures/cadot_export_gini_theil_fits.png" alt="Export Gini and Theil against real GDP per capita with linear, quadratic, and nonparametric fits"></a><figcaption>Question: does modern export concentration bend upward at high income? The quadratic does; the nonparametric fit is flatter in the sparse rich tail.</figcaption></figure>
+      </div>
+      <div class="download-grid compact-downloads">
+        <a href="assets/downloads/cadot_final_interpretation_report.md">Detailed interpretation report</a>
+        <a href="assets/downloads/cadot-replication.md">Full replication record</a>
+        <a href="assets/downloads/cadot_production_core_sensitivity.md">Production-core memo</a>
+        <a href="assets/downloads/historical_partner_concentration_advisor_memo.md">Historical advisor memo</a>
+      </div>
+    </section>
+
+    <section class="section" id="cadot-modern-156-results">
+      <div class="section-heading">
+        <h2>Modern 156-Reporter Product Results</h2>
+        <p>Unit: reporter-year. Income is real GDP per capita in constant-2021 PPP dollars. Models include log population and oil-export share; pooled and country-FE models include year effects and reporter-clustered standard errors. Product calculations exclude HS6 999999 before aggregation.</p>
+      </div>
+      <div class="table-scroll">{broad_table}</div>
+      <div class="figure-row">
+        <figure><a class="figure-link" href="assets/figures/cadot_broad_ppp_hump_level.png"><img src="assets/figures/cadot_broad_ppp_hump_level.png" alt="Broad 156 level-PPP concentration curves"></a><figcaption>Level-PPP results: export turning points lie at or beyond the central rich-country support.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/cadot_broad_ppp_hump_log.png"><img src="assets/figures/cadot_broad_ppp_hump_log.png" alt="Broad 156 log-PPP concentration curves"></a><figcaption>Log-PPP stress test: export product results weaken or move outside support.</figcaption></figure>
+      </div>
+      <h3 class="subsection-title">Where the variation comes from</h3>
+      <div class="table-scroll">{variance_table}</div>
+    </section>
+
+    <section class="section" id="cadot-production-core">
+      <div class="section-heading">
+        <h2>Production-Core Exclusion Exercise</h2>
+        <p>The severe screen removes countries with mean population below one million, mean oil/fuel export shares of at least 30%, and prominent finance, tax-conduit, offshore, or re-export hubs. It leaves {production_country_count} countries. This remains gross customs trade—not domestic value-added production.</p>
+      </div>
+      <div class="table-scroll">{production_table}</div>
+      <div class="note">
+        <p><strong>Read:</strong> Removing hubs does not erase the level-PPP cross-country pattern. It shifts the Theil and active-count turning point to about $46,000 and the HHI turning point to about $40,000. But active-product Gini does not turn, log-income versions fail, and no country-FE specification passes the endpoint test at 5%.</p>
+      </div>
+      <div class="download-grid compact-downloads">
+        <a href="assets/downloads/cadot_production_core_model_summary.csv">Model summary</a>
+        <a href="assets/downloads/cadot_production_core_country_classification.csv">Country exclusions</a>
+        <a href="assets/downloads/cadot_production_core_manifest.json">Run manifest</a>
+      </div>
+    </section>
+
+    <section class="section" id="cadot-historical-partners">
+      <div class="section-heading">
+        <h2>Historical Exercise: Partner Concentration, 1827-2014</h2>
+        <p>CEPII TRADHIST bilateral flows are combined with Maddison GDP per capita and population for 13 source-defined reporter entities. Measures are Gini, Theil, and HHI across observed positive partners. Missing historical dyads are not converted to zero; the preferred baseline requires at least 20 active partners.</p>
+      </div>
+      <div class="table-scroll">{historical_table}</div>
+      <div class="figure-row">
+        <figure><a class="figure-link" href="assets/figures/cadot_historical_baseline_u_shape.png"><img src="assets/figures/cadot_historical_baseline_u_shape.png" alt="Historical partner concentration baseline U-shape tests"></a><figcaption>None of the six preferred within-country tests passes the formal wild-cluster-bootstrap U-shape test.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/cadot_historical_sensitivity.png"><img src="assets/figures/cadot_historical_sensitivity.png" alt="Historical partner concentration sensitivity U-shape tests"></a><figcaption>Across {historical_test_count} preferred within-country variant tests, zero is classified as a supported U-shape.</figcaption></figure>
+      </div>
+      <div class="note">
+        <p><strong>Scope:</strong> This is a long-run boundary test of concentration across partners. It is not a product-level historical replication. USSR and the Russian Federation remain separate entities, and the sensitivity grid includes war exclusions, pre/post-1948 source regimes, partner-count thresholds, common-partner blocks, rank truncation, synthetic censoring, and leave-one-entity-out checks.</p>
+      </div>
+      <div class="download-grid compact-downloads">
+        <a href="assets/downloads/historical_partner_preferred_within_results.csv">Preferred historical results</a>
+        <a href="assets/downloads/historical_partner_cadot_model_summary.csv">Full historical model summary</a>
+        <a href="assets/downloads/historical_partner_concentration_run_manifest.json">Historical run manifest</a>
+        <a href="assets/downloads/historical_partner_concentration_adversarial_review.md">Historical adversarial review</a>
+      </div>
+    </section>
+
+    <section class="section" id="cadot-latest-mechanisms">
+      <div class="section-heading">
+        <h2>Latest Mechanism Exercises: Broad 156 Sample</h2>
+        <p>These five-year episode flags overlap and are descriptive classifications, not an additive causal decomposition. The broad tribunal uses harmonized HS1992 product families and a fixed-universe Product Theil reconcentration outcome.</p>
+      </div>
+      <div class="table-scroll">{mechanism_table}</div>
+      <div class="figure-row">
+        <figure><a class="figure-link" href="assets/figures/cadot_broad_mechanism_scorecard.png"><img src="assets/figures/cadot_broad_mechanism_scorecard.png" alt="Broad 156 Cadot mechanism scorecard"></a><figcaption>Continuing-product superstar scaling accompanies 72.2% of 1,312 reconcentration episodes; old-cone pruning is flagged in 5.4%.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/cadot_broad_old_cone_exit.png"><img src="assets/figures/cadot_broad_old_cone_exit.png" alt="Broad 156 old-cone product exit evidence"></a><figcaption>Old-cone-consistent exit remains statistically detectable, but it is not the dominant episode classification.</figcaption></figure>
+      </div>
+      <h3 class="subsection-title">Old-Cone Exit Regression</h3>
+      <div class="table-scroll">{old_cone_table}</div>
+      <div class="note">
+        <p><strong>Trust status:</strong> Mostly trustworthy for descriptive use after local adversarial review. The old-cone interaction is positive, but overlapping windows, generated PRODY, common product shocks, and one-way reporter clustering prevent a causal interpretation. The tribunal's own log-income turning point is outside support, so its rich-side mechanism split uses the observed income p75 as a labeled fallback.</p>
+      </div>
+      <div class="download-grid compact-downloads">
+        <a href="assets/downloads/cadot_broad_mechanism_scorecard_summary.csv">Mechanism scorecard</a>
+        <a href="assets/downloads/cadot_broad_old_cone_exit_models.csv">Old-cone models</a>
+        <a href="assets/downloads/cadot_broad_tribunal_validation_checks.csv">Validation checks</a>
+        <a href="assets/downloads/cadot_broad_tribunal_run_manifest.json">Tribunal manifest</a>
+        <a href="assets/downloads/cadot_broad_tribunal_adversarial_review.md">Tribunal adversarial review</a>
+      </div>
+    </section>
+
+    <section class="section" id="cadot-replication-status">
+      <div class="section-heading">
+        <h2>Replication Status and Remaining Test</h2>
+      </div>
+      <ul class="callout-list">
+        <li><strong>Completed:</strong> modern 156-reporter three-metric reconstruction, level/log PPP models, pooled/within/between decomposition, production-core exclusions, mechanism tribunal, and historical partner boundary test.</li>
+        <li><strong>Not completed:</strong> a literal 1988-2006 reconstruction using Cadot's exact country list, mirror-export rule, and 4,991-line product universe.</li>
+        <li><strong>Best next test:</strong> domestic-value-added export concentration using OECD TiVA/ICIO, followed by a matched original-period versus modern-period product bridge.</li>
+      </ul>
+    </section>
+    """
+
+
 def load_cadot_hump_data() -> dict[str, Any]:
     if not include_cadot_hump_page():
         return {}
+    if ACTIVE_SITE_SAMPLE == "cadot_broad_156":
+        return load_cadot_integrated_data()
     sample_diagnostics = read_csv("cadot_hump_sample_diagnostics")
     hump_models = read_csv("cadot_hump_models")
     mechanical_models = read_csv("cadot_mechanical_variant_models")
@@ -8009,6 +8645,9 @@ def build_page_context(data: dict[str, Any]) -> dict[str, str]:
         """
 
     cadot_hump_body = ""
+    if cadot_hump and ACTIVE_SITE_SAMPLE == "cadot_broad_156":
+        cadot_hump_body = build_cadot_integrated_body(cadot_hump)
+        cadot_hump = {}
     if cadot_hump:
         cadot_sample_rows = cadot_hump.get("sample_diagnostics", []) or []
         cadot_hump_rows = cadot_hump.get("hump_models_preferred", []) or []
@@ -10221,7 +10860,10 @@ def nav(active: str) -> str:
     if include_contributions_page():
         links.insert(3, ("contributions.html", "Contributions", "contributions"))
     if include_cadot_hump_page():
-        links.insert(3, ("cadot-hump.html", "Behind hump", "cadot-hump"))
+        cadot_nav_label = (
+            "Cadot results" if ACTIVE_SITE_SAMPLE == "cadot_broad_156" else "Behind hump"
+        )
+        links.insert(3, ("cadot-hump.html", cadot_nav_label, "cadot-hump"))
     if include_world_relative_product_gini():
         links.insert(3, ("world-gini.html", "World Gini", "world-gini"))
     if include_prof_p_page():
@@ -10288,7 +10930,10 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
         literature_link = '<a href="literature.html"><span>08</span><strong>Literature</strong><small>Project-facing takeaways from export-margins, sophistication, survival, and firm-mechanism papers.</small></a>'
     cadot_hump_link = ""
     if include_cadot_hump_page():
-        cadot_hump_link = '<a href="cadot-hump.html"><span>09</span><strong>Behind the Hump</strong><small>Cadot-style reconcentration mechanism tribunal: mechanical, commodity, transition, and old-cone tests.</small></a>'
+        if ACTIVE_SITE_SAMPLE == "cadot_broad_156":
+            cadot_hump_link = '<a href="cadot-hump.html"><span>09</span><strong>Cadot Results</strong><small>Combined replication interpretation, production-core sensitivity, mechanisms, and historical partner boundary tests.</small></a>'
+        else:
+            cadot_hump_link = '<a href="cadot-hump.html"><span>09</span><strong>Behind the Hump</strong><small>Cadot-style reconcentration mechanism tribunal: mechanical, commodity, transition, and old-cone tests.</small></a>'
     contributions_link = ""
     if include_contributions_page():
         contributions_link = '<a href="contributions.html"><span>00</span><strong>Contributions</strong><small>Empirical claims, literature links, and the strongest figures for the project story.</small></a>'
@@ -11624,7 +12269,14 @@ def render_pages(context: dict[str, str]) -> dict[str, str]:
     if include_contributions_page() and contributions_body:
         pages["contributions.html"] = layout("Project Contributions", "contributions", contributions_body)
     if include_cadot_hump_page() and cadot_hump_body:
-        pages["cadot-hump.html"] = layout("Behind the Hump", "cadot-hump", cadot_hump_body)
+        cadot_page_title = (
+            "Cadot Replication Results"
+            if ACTIVE_SITE_SAMPLE == "cadot_broad_156"
+            else "Behind the Hump"
+        )
+        pages["cadot-hump.html"] = layout(
+            cadot_page_title, "cadot-hump", cadot_hump_body
+        )
     if include_world_relative_product_gini():
         pages["world-gini.html"] = layout("World-Relative Product Gini", "world-gini", world_gini_body)
     if include_ex12_extensive_margin():
