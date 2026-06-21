@@ -26,8 +26,8 @@ Standing rule applied: HS6 `999999` is treated as "Commodities not specified" an
 | E11 HS2 4% bin 25 export probability | 0.994953 | 0.995156 | 0.000203 |
 | E11 product LPM LOO-Gini coef | -0.129632 | -0.129485 | 0.000147 |
 | E11 product conditional-logit LOO-Gini coef | n/a | -3.3891 | n/a |
-| E12 H5 median new-product contribution share | 0.027778 | 0.195298 | 0.167521 |
-| E12 H5 median existing-top-10 contribution share | 0.171979 | 0.149532 | -0.022447 |
+| E12 H5 median new-product contribution share | 0.027778 | 0.536867 | 0.509089 |
+| E12 H5 median existing-top-10 contribution share | 0.171979 | 0.107793 | -0.064186 |
 
 ## Exercise-Level Notes
 
@@ -39,7 +39,7 @@ Standing rule applied: HS6 `999999` is treated as "Commodities not specified" an
 - Exercise 10 benchmark: product concentration remains far above the symmetric-random allocation benchmark; 1.0000 of product observations sit above the 95th simulated percentile.
 - Exercise 11 IO linkage: top-export-sector imported-input exposure remains high, with median weighted input product Gini 0.761978.
 - Exercise 11 product-export linkage: HS6 export probability still declines across the 25 four-percent bins (0.934075 in bin 1 to 0.755310 in bin 25). The visual conclusion is unchanged from the 10%/old 4% graph: products contributing more to import concentration are less likely to be exported.
-- Exercise 12 transitions: median H5 new-product contribution share is 0.195298, now above the median existing top-10 contribution share of 0.149532.
+- Exercise 12 transitions: using the harmonized-HS6 headline sample, median H5 new-product contribution share is 0.536867, above the median existing top-10 contribution share of 0.107793.
 
 ## Exercise 11 Model Check
 

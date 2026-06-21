@@ -11,12 +11,15 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from trade_concentration_pipeline import COUNTRY_SAMPLE_CHOICES, sample_processed_path, sample_results_dir
+
 
 ROOT = Path(__file__).resolve().parents[1]
-PANEL = ROOT / "data/processed/exercise_11_product_export_linkage_panel.parquet"
 MAPPING = ROOT / "data/processed/exercise_03_bec5_mapping_approved.csv"
-TABLE_OUT = ROOT / "results/exercise_03_tables/import_bin_goods_country_share_2024.csv"
-FIGURE_DIR = ROOT / "results/exercise_03_figures"
+PANEL = sample_processed_path("exercise_11_product_export_linkage_panel.parquet")
+TABLE_OUT = sample_results_dir() / "exercise_03_tables/import_bin_goods_country_share_2024.csv"
+TOP_GOODS_OUT = sample_results_dir() / "exercise_03_tables/top_goods_by_import_bin_world_india_2024.csv"
+FIGURE_DIR = sample_results_dir() / "exercise_03_figures"
 EXCLUDED_HS6_CODES = {"999999"}
 
 IMPORT_BINS = {
@@ -113,7 +116,19 @@ def load_descriptions() -> pd.DataFrame:
     return descriptions.drop_duplicates("cmd_code", keep="last")
 
 
-def build_table(year: int) -> pd.DataFrame:
+def configure_sample_paths(country_sample: str) -> None:
+    global PANEL
+    global TABLE_OUT
+    global TOP_GOODS_OUT
+    global FIGURE_DIR
+    result_base = sample_results_dir(country_sample)
+    PANEL = sample_processed_path("exercise_11_product_export_linkage_panel.parquet", country_sample)
+    TABLE_OUT = result_base / "exercise_03_tables/import_bin_goods_country_share_2024.csv"
+    TOP_GOODS_OUT = result_base / "exercise_03_tables/top_goods_by_import_bin_world_india_2024.csv"
+    FIGURE_DIR = result_base / "exercise_03_figures"
+
+
+def load_work_panel(year: int) -> pd.DataFrame:
     columns = ["iso3", "country", "year", "cmd_code", "import_bin", "import_value", "total_imports"]
     panel = pd.read_parquet(PANEL, columns=columns)
     work = panel[(panel["year"].eq(year)) & (panel["import_bin"].isin(IMPORT_BINS))].copy()
@@ -124,6 +139,10 @@ def build_table(year: int) -> pd.DataFrame:
     work = drop_excluded_hs6(work)
     if work.empty:
         raise RuntimeError(f"No non-excluded mapped import-bin rows found for {year}.")
+    return work
+
+
+def build_table(work: pd.DataFrame, year: int) -> pd.DataFrame:
     reporter_count = work["iso3"].nunique()
     bin_totals = (
         work.groupby(["iso3", "country", "import_bin"], as_index=False)["import_value"]
@@ -185,6 +204,67 @@ def build_table(year: int) -> pd.DataFrame:
     return out[columns].sort_values(["import_bin", "summed_total_import_share"], ascending=[True, False])
 
 
+def top_goods_for_scope(scope: str, work: pd.DataFrame, year: int, top_n: int) -> pd.DataFrame:
+    if scope == f"India {year}":
+        scoped = work[work["iso3"].eq("IND")].copy()
+    elif scope == f"Pooled sample {year}":
+        scoped = work.copy()
+    else:
+        raise ValueError(f"Unsupported top-goods scope: {scope}")
+    if scoped.empty:
+        return pd.DataFrame(
+            columns=[
+                "scope",
+                "import_bin",
+                "rank_in_bin",
+                "cmd_code",
+                "desc",
+                "import_value_usd_bn",
+                "share_of_bin_pct",
+                "share_of_total_pct",
+            ]
+        )
+
+    descriptions = load_descriptions().rename(columns={"product_description": "desc"})
+    product_values = scoped.groupby(["import_bin", "cmd_code"], as_index=False)["import_value"].sum()
+    product_values = product_values.merge(descriptions, on="cmd_code", how="left")
+    product_values["desc"] = product_values["desc"].fillna("")
+    bin_totals = scoped.groupby("import_bin")["import_value"].sum()
+    total_imports = float(scoped[["iso3", "total_imports"]].drop_duplicates("iso3")["total_imports"].sum())
+    rows = []
+    for import_bin, group in product_values.groupby("import_bin", sort=True):
+        ranked = group.sort_values(["import_value", "cmd_code"], ascending=[False, True]).head(top_n).copy()
+        bin_total = float(bin_totals.loc[import_bin])
+        ranked.insert(0, "rank_in_bin", np.arange(1, len(ranked) + 1))
+        ranked.insert(0, "scope", scope)
+        ranked["import_value_usd_bn"] = ranked["import_value"] / 1_000_000_000
+        ranked["share_of_bin_pct"] = 100 * ranked["import_value"] / bin_total if bin_total > 0 else np.nan
+        ranked["share_of_total_pct"] = 100 * ranked["import_value"] / total_imports if total_imports > 0 else np.nan
+        rows.append(
+            ranked[
+                [
+                    "scope",
+                    "import_bin",
+                    "rank_in_bin",
+                    "cmd_code",
+                    "desc",
+                    "import_value_usd_bn",
+                    "share_of_bin_pct",
+                    "share_of_total_pct",
+                ]
+            ]
+        )
+    return pd.concat(rows, ignore_index=True) if rows else pd.DataFrame()
+
+
+def build_top_goods_table(work: pd.DataFrame, year: int, top_n: int) -> pd.DataFrame:
+    scopes = [
+        top_goods_for_scope(f"Pooled sample {year}", work, year, top_n),
+        top_goods_for_scope(f"India {year}", work, year, top_n),
+    ]
+    return pd.concat(scopes, ignore_index=True).sort_values(["scope", "import_bin", "rank_in_bin"])
+
+
 def top_box_lines(frame: pd.DataFrame, metric: str, count: int = 10) -> str:
     lines = []
     for rank, row in enumerate(frame.head(count).itertuples(index=False), start=1):
@@ -235,11 +315,17 @@ def plot_ranked(frame: pd.DataFrame, metric: str, title: str, output: Path, colo
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--year", type=int, default=2024)
+    parser.add_argument("--country-sample", choices=COUNTRY_SAMPLE_CHOICES, default="rd2_countries")
+    parser.add_argument("--top-n", type=int, default=5)
     args = parser.parse_args()
+    configure_sample_paths(args.country_sample)
 
-    table = build_table(args.year)
+    work = load_work_panel(args.year)
+    table = build_table(work, args.year)
+    top_goods = build_top_goods_table(work, args.year, args.top_n)
     TABLE_OUT.parent.mkdir(parents=True, exist_ok=True)
     table.to_csv(TABLE_OUT, index=False)
+    top_goods.to_csv(TOP_GOODS_OUT, index=False)
     for import_bin, label in IMPORT_BINS.items():
         bin_table = table[table["import_bin"].eq(import_bin)].copy()
         plot_ranked(
@@ -257,6 +343,7 @@ def main() -> None:
             "#0f766e",
         )
     print(f"Wrote {TABLE_OUT}")
+    print(f"Wrote {TOP_GOODS_OUT}")
     for import_bin in IMPORT_BINS:
         print(f"Wrote {FIGURE_DIR / f'{import_bin}_goods_sum_total_import_share_{args.year}.png'}")
         print(f"Wrote {FIGURE_DIR / f'{import_bin}_goods_sum_bin_import_share_{args.year}.png'}")

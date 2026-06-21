@@ -9,9 +9,12 @@ Comtrade bulk files.
 from __future__ import annotations
 
 import argparse
+import json
 import math
 import shutil
+import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -21,6 +24,10 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import seaborn as sns
 from scipy.optimize import minimize
+from scipy.stats import t as student_t
+
+from concentration_metrics import active_gini, active_loo_gini_contributions
+from trade_concentration_pipeline import COUNTRY_SAMPLE_CHOICES, configure_country_sample, save_country_panel
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,7 +36,7 @@ RESULTS = ROOT / "results"
 
 IMPORT_PRODUCT_DIR = DATA_PROCESSED / "exercise_03_file_aggregates" / "product_values"
 IMPORT_SUPPLIER_DIR = DATA_PROCESSED / "exercise_04_file_aggregates"
-EXPORT_DIR = DATA_PROCESSED / "exercise_12_file_aggregates"
+EXPORT_DIR = DATA_PROCESSED / "exercise_02_12_file_aggregates"
 
 OUT_DATA = DATA_PROCESSED / "exercise_11_product_export_linkage_panel.parquet"
 OUT_SECTOR = DATA_PROCESSED / "exercise_11_sector_export_linkage_panel.parquet"
@@ -37,6 +44,8 @@ OUT_HS2 = DATA_PROCESSED / "exercise_11_hs2_export_linkage_panel.parquet"
 OUT_TABLES = RESULTS / "exercise_11_product_export_linkage_tables"
 OUT_FIGURES = RESULTS / "exercise_11_product_export_linkage_figures"
 OUT_MEMO = RESULTS / "exercise_11_product_export_linkage.md"
+OUT_MANIFEST = RESULTS / "run_manifest_exercise_11_product_export_linkage.json"
+ACTIVE_OUTPUT_SAMPLE = "prof_p_33"
 
 COMMODITY_OUTLIER_HS4 = {"2701", "2709", "2710", "2711", "7108"}
 EXCLUDED_HS6_CODES = {"999999"}
@@ -58,23 +67,53 @@ PALETTE = {
 }
 
 
-def gini(values: np.ndarray | pd.Series) -> float:
-    arr = np.asarray(values, dtype=float)
-    arr = arr[np.isfinite(arr) & (arr > 0)]
-    if arr.size == 0:
-        return np.nan
-    arr.sort()
-    n = arr.size
-    total = arr.sum()
-    if total <= 0:
-        return np.nan
-    idx = np.arange(1, n + 1, dtype=float)
-    return float((2 * np.sum(idx * arr) / (n * total)) - ((n + 1) / n))
+# Keep the legacy local name; this is active-positive by design.
+gini = active_gini
 
 
 def ensure_dirs() -> None:
     OUT_TABLES.mkdir(parents=True, exist_ok=True)
     OUT_FIGURES.mkdir(parents=True, exist_ok=True)
+
+
+def sample_processed_dir(country_sample: str) -> Path:
+    return DATA_PROCESSED if country_sample == "prof_p_33" else DATA_PROCESSED / "samples" / country_sample
+
+
+def sample_results_dir(country_sample: str) -> Path:
+    return RESULTS if country_sample == "prof_p_33" else RESULTS / "samples" / country_sample
+
+
+def configure_sample_paths(country_sample: str) -> None:
+    base_processed = sample_processed_dir(country_sample)
+    base_results = sample_results_dir(country_sample)
+    global ACTIVE_OUTPUT_SAMPLE
+    global IMPORT_PRODUCT_DIR
+    global IMPORT_SUPPLIER_DIR
+    global EXPORT_DIR
+    global OUT_DATA
+    global OUT_SECTOR
+    global OUT_HS2
+    global OUT_TABLES
+    global OUT_FIGURES
+    global OUT_MEMO
+    global OUT_MANIFEST
+    ACTIVE_OUTPUT_SAMPLE = country_sample
+    if country_sample == "prof_p_33":
+        IMPORT_PRODUCT_DIR = DATA_PROCESSED / "exercise_03_file_aggregates" / "product_values"
+        IMPORT_SUPPLIER_DIR = DATA_PROCESSED / "exercise_04_file_aggregates"
+        EXPORT_DIR = DATA_PROCESSED / "exercise_02_12_file_aggregates"
+    else:
+        IMPORT_PRODUCT_DIR = base_processed / "checkpoints" / "exercise_03_file_aggregates" / "product_values"
+        IMPORT_SUPPLIER_DIR = base_processed / "checkpoints" / "exercise_04_file_aggregates"
+        EXPORT_DIR = base_processed / "exercise_02_12_file_aggregates"
+    OUT_DATA = base_processed / "exercise_11_product_export_linkage_panel.parquet"
+    OUT_SECTOR = base_processed / "exercise_11_sector_export_linkage_panel.parquet"
+    OUT_HS2 = base_processed / "exercise_11_hs2_export_linkage_panel.parquet"
+    OUT_TABLES = base_results / "exercise_11_product_export_linkage_tables"
+    OUT_FIGURES = base_results / "exercise_11_product_export_linkage_figures"
+    OUT_MEMO = base_results / "exercise_11_product_export_linkage.md"
+    OUT_MANIFEST = base_results / "run_manifest_exercise_11_product_export_linkage.json"
 
 
 def load_partner_reference() -> pd.DataFrame:
@@ -95,8 +134,7 @@ def load_partner_reference() -> pd.DataFrame:
 
 
 def load_country_metadata() -> pd.DataFrame:
-    path = DATA_PROCESSED / "prof_p_country_panel.csv"
-    panel = pd.read_csv(path)
+    panel = save_country_panel()
     return panel[["reporter_code", "country", "iso3"]].drop_duplicates()
 
 
@@ -153,6 +191,18 @@ def drop_excluded_hs6(df: pd.DataFrame, code_col: str = "cmd_code") -> pd.DataFr
     return df.loc[~mask].copy()
 
 
+def excluded_hs6_count(df: pd.DataFrame, code_col: str = "cmd_code") -> int:
+    if df.empty or code_col not in df.columns:
+        return 0
+    return int(normalize_cmd(df[code_col]).isin(EXCLUDED_HS6_CODES).sum())
+
+
+def assert_no_excluded_hs6(df: pd.DataFrame, label: str, code_col: str = "cmd_code") -> None:
+    count = excluded_hs6_count(df, code_col=code_col)
+    if count:
+        raise RuntimeError(f"{label} contains {count:,} excluded HS6 999999 rows in {code_col}.")
+
+
 def loo_gini_frame(product_totals: pd.DataFrame) -> pd.DataFrame:
     work = product_totals[["cmd_code", "import_value"]].copy()
     work = drop_excluded_hs6(work)
@@ -164,24 +214,15 @@ def loo_gini_frame(product_totals: pd.DataFrame) -> pd.DataFrame:
     values = work["import_value"].to_numpy(dtype=float)
     n = values.size
     total = float(values.sum())
-    ranks = np.arange(1, n + 1, dtype=float)
-    weighted_sum = float(np.sum(ranks * values))
     total_gini = gini(values)
-    suffix_after = total - np.cumsum(values)
-
-    without = np.full(n, np.nan, dtype=float)
-    if n > 1:
-        n2 = n - 1
-        total_without = total - values
-        weighted_without = weighted_sum - ranks * values - suffix_after
-        valid = total_without > 0
-        without[valid] = (2 * weighted_without[valid] / (n2 * total_without[valid])) - ((n2 + 1) / n2)
+    loo_contribution = active_loo_gini_contributions(values)
+    without = total_gini - loo_contribution
 
     work["total_imports"] = total
     work["active_import_products"] = int(n)
     work["total_import_product_gini"] = total_gini
     work["product_gini_without_product"] = without
-    work["loo_gini_contribution"] = total_gini - without
+    work["loo_gini_contribution"] = loo_contribution
     work["import_value_share"] = work["import_value"] / total if total else np.nan
     work["import_rank"] = work["import_value"].rank(method="first", ascending=False).astype(int)
     return work
@@ -397,6 +438,20 @@ def build_product_panel() -> pd.DataFrame:
     import_files = sorted(IMPORT_PRODUCT_DIR.glob("*.parquet"))
     supplier_map = {path.name: path for path in IMPORT_SUPPLIER_DIR.glob("*.parquet")}
     export_map = {path.name: path for path in EXPORT_DIR.glob("*.parquet")}
+    if not import_files:
+        raise FileNotFoundError(f"No Exercise 3 product aggregate partials found in {IMPORT_PRODUCT_DIR}.")
+    if not export_map:
+        raise FileNotFoundError(
+            f"No canonical Exercise 2/12 export aggregate partials found in {EXPORT_DIR}. "
+            "Run `python scripts/run_exercises_02_12.py --fresh --workers 4` first."
+        )
+    missing_export = sorted(path.name for path in import_files if path.name not in export_map)
+    if missing_export:
+        examples = ", ".join(missing_export[:5])
+        raise RuntimeError(
+            f"Exercise 11 cannot safely build with missing canonical Exercise 12 export partials "
+            f"for {len(missing_export):,} import partials. Examples: {examples}"
+        )
     if OUT_DATA.exists():
         OUT_DATA.unlink()
 
@@ -417,8 +472,12 @@ def build_product_panel() -> pd.DataFrame:
     finally:
         if writer is not None:
             writer.close()
+    if writer is None:
+        raise RuntimeError("Exercise 11 product-export linkage panel build produced no rows.")
     print(f"wrote {OUT_DATA.relative_to(ROOT)} with {total_rows:,} rows", flush=True)
-    return pd.read_parquet(OUT_DATA)
+    panel = pd.read_parquet(OUT_DATA)
+    assert_no_excluded_hs6(panel, "Exercise 11 rebuilt product panel")
+    return panel
 
 
 def load_or_build_product_panel(rebuild: bool = False) -> pd.DataFrame:
@@ -426,7 +485,9 @@ def load_or_build_product_panel(rebuild: bool = False) -> pd.DataFrame:
         OUT_DATA.unlink()
     if OUT_DATA.exists():
         print(f"loading existing {OUT_DATA.relative_to(ROOT)}", flush=True)
-        return drop_excluded_hs6(pd.read_parquet(OUT_DATA))
+        panel = drop_excluded_hs6(pd.read_parquet(OUT_DATA))
+        assert_no_excluded_hs6(panel, "Exercise 11 cached product panel")
+        return panel
     return build_product_panel()
 
 
@@ -472,6 +533,20 @@ def normal_pvalue(t_stat: float) -> float:
     if not np.isfinite(t_stat):
         return np.nan
     return math.erfc(abs(t_stat) / math.sqrt(2.0))
+
+
+def cluster_t_reference(clusters: int) -> tuple[float, float]:
+    if clusters <= 1:
+        return np.nan, np.nan
+    df = clusters - 1
+    return float(df), float(student_t.ppf(0.975, df))
+
+
+def cluster_t_pvalue(t_stat: float, clusters: int) -> float:
+    df, _critical = cluster_t_reference(clusters)
+    if not np.isfinite(t_stat) or not np.isfinite(df) or df <= 0:
+        return np.nan
+    return float(2 * student_t.sf(abs(t_stat), df))
 
 
 def logistic_cdf(values: np.ndarray) -> np.ndarray:
@@ -526,6 +601,7 @@ def fixed_effect_cluster_ols(df: pd.DataFrame, outcome: str, terms: list[str], f
 def results_to_frame(results: list[OLSResult]) -> pd.DataFrame:
     rows = []
     for result in results:
+        reference_df, critical = cluster_t_reference(result.clusters)
         for idx, term in enumerate(result.terms):
             coef = float(result.beta[idx])
             se = float(result.se[idx])
@@ -538,11 +614,13 @@ def results_to_frame(results: list[OLSResult]) -> pd.DataFrame:
                     "coef": coef,
                     "std_error": se,
                     "t_stat": t_stat,
-                    "p_value": normal_pvalue(t_stat),
-                    "ci_low": coef - 1.96 * se if np.isfinite(se) else np.nan,
-                    "ci_high": coef + 1.96 * se if np.isfinite(se) else np.nan,
+                    "p_value": cluster_t_pvalue(t_stat, result.clusters),
+                    "ci_low": coef - critical * se if np.isfinite(se) and np.isfinite(critical) else np.nan,
+                    "ci_high": coef + critical * se if np.isfinite(se) and np.isfinite(critical) else np.nan,
                     "nobs": result.nobs,
                     "clusters": result.clusters,
+                    "p_value_reference": f"Student t, df={int(reference_df)}" if np.isfinite(reference_df) else "",
+                    "se_method": "clustered by reporter_code",
                     "r2_within": result.r2_within,
                 }
             )
@@ -567,6 +645,8 @@ def fe_logit_to_frame(result: FELogitResult) -> pd.DataFrame:
                 "p_value": normal_pvalue(z_stat),
                 "ci_low": coef - 1.96 * se if np.isfinite(se) else np.nan,
                 "ci_high": coef + 1.96 * se if np.isfinite(se) else np.nan,
+                "p_value_reference": "normal approximation",
+                "se_method": "Hessian, not clustered; descriptive only",
                 "nobs": result.nobs,
                 "groups": result.groups,
                 "dropped_no_variation_groups": result.dropped_groups,
@@ -758,32 +838,34 @@ def run_product_regressions(panel: pd.DataFrame, table_suffix: str = "", sample_
     cov = interaction.cov
     non_intermediate_se = float(interaction.se[idx_base])
     intermediate_se = float(np.sqrt(max(cov[idx_base, idx_base] + cov[idx_int, idx_int] + 2 * cov[idx_base, idx_int], 0)))
+    _df, critical = cluster_t_reference(interaction.clusters)
     effects = pd.DataFrame(
         [
             {
                 "effect": "Non-intermediate slope",
                 "coef": base,
                 "std_error": non_intermediate_se,
-                "ci_low": base - 1.96 * non_intermediate_se,
-                "ci_high": base + 1.96 * non_intermediate_se,
+                "ci_low": base - critical * non_intermediate_se if np.isfinite(critical) else np.nan,
+                "ci_high": base + critical * non_intermediate_se if np.isfinite(critical) else np.nan,
             },
             {
                 "effect": "Intermediate slope",
                 "coef": base + interaction_coef,
                 "std_error": intermediate_se,
-                "ci_low": base + interaction_coef - 1.96 * intermediate_se,
-                "ci_high": base + interaction_coef + 1.96 * intermediate_se,
+                "ci_low": base + interaction_coef - critical * intermediate_se if np.isfinite(critical) else np.nan,
+                "ci_high": base + interaction_coef + critical * intermediate_se if np.isfinite(critical) else np.nan,
             },
             {
                 "effect": "Intermediate minus non-intermediate",
                 "coef": interaction_coef,
                 "std_error": float(interaction.se[idx_int]),
-                "ci_low": interaction_coef - 1.96 * float(interaction.se[idx_int]),
-                "ci_high": interaction_coef + 1.96 * float(interaction.se[idx_int]),
+                "ci_low": interaction_coef - critical * float(interaction.se[idx_int]) if np.isfinite(critical) else np.nan,
+                "ci_high": interaction_coef + critical * float(interaction.se[idx_int]) if np.isfinite(critical) else np.nan,
             },
         ]
     )
     effects.insert(0, "sample", sample_label)
+    effects["ci_reference"] = f"Student t, df={int(_df)}" if np.isfinite(_df) else ""
     suffix = f"_{table_suffix}" if table_suffix else ""
     reg.to_csv(OUT_TABLES / f"product_regressions{suffix}.csv", index=False)
     effects.to_csv(OUT_TABLES / f"intermediate_effects{suffix}.csv", index=False)
@@ -1462,7 +1544,7 @@ def write_memo(
     key = product_reg[
         (product_reg["model_label"].isin(["product_export_value_gini", "product_export_any_gini", "product_export_value_partner_hhi", "product_export_value_intermediate_interaction"]))
         & (product_reg["term"].isin(["loo_gini_contribution_z", "loo_partner_hhi_contribution_z", "loo_gini_x_intermediate_z"]))
-    ][["model_label", "outcome", "term", "coef", "std_error", "p_value", "nobs", "clusters", "r2_within"]].copy()
+    ][["model_label", "outcome", "term", "coef", "std_error", "p_value", "p_value_reference", "nobs", "clusters", "r2_within"]].copy()
     clogit_key = conditional_logit[
         conditional_logit["term"].isin(["loo_gini_contribution_z", "import_value_share_z"])
     ][
@@ -1474,6 +1556,7 @@ def write_memo(
             "coef",
             "std_error",
             "p_value",
+            "se_method",
             "nobs",
             "groups",
             "dropped_no_variation_groups",
@@ -1503,11 +1586,13 @@ Do the HS6 products that make a country's total import basket more concentrated 
 
 ## Selected Regression Results
 
+OLS standard errors are clustered by reporter country. P-values and confidence intervals use a Student-t reference with reporter-cluster degrees of freedom.
+
 {key.round(4).to_markdown(index=False)}
 
 ## Country-Year Fixed-Effect Logit
 
-The binary export outcome is also estimated with a country-year fixed-effect logit. This is the computationally feasible nonlinear probability model for the 5.5 million-row HS6 panel; it compares imported products within the same reporter-year and drops reporter-years with no within-group variation in `export_any`.
+The binary export outcome is also estimated with a country-year fixed-effect logit. This is the computationally feasible nonlinear probability model for the 5.5 million-row HS6 panel; it compares imported products within the same reporter-year and drops reporter-years with no within-group variation in `export_any`. Its Hessian standard errors are not clustered, so the logit table is descriptive rather than the preferred inference table.
 
 {clogit_key.round(4).to_markdown(index=False) if not clogit_key.empty else "No fixed-effect logit output."}
 
@@ -1515,7 +1600,7 @@ The binary export outcome is also estimated with a country-year fixed-effect log
 
 The HS6 exact-product outcome may be too narrow for an intermediate-processing claim because imported inputs and exported outputs can sit in different HS6 product lines inside the same broader production chain. The HS2 robustness aggregates HS6 concentration contributions and exports to HS chapters, then reruns export-linkage regressions with country-year and HS2 fixed effects.
 
-{hs2_reg[(hs2_reg["term"].isin(["hs2_product_loo_gini_sum_z", "hs2_product_loo_gini_sum_x_intermediate_share_z"]))][["model_label", "outcome", "term", "coef", "std_error", "p_value", "nobs", "clusters", "r2_within"]].round(4).to_markdown(index=False) if not hs2_reg.empty else "No HS2 regression output."}
+{hs2_reg[(hs2_reg["term"].isin(["hs2_product_loo_gini_sum_z", "hs2_product_loo_gini_sum_x_intermediate_share_z"]))][["model_label", "outcome", "term", "coef", "std_error", "p_value", "p_value_reference", "nobs", "clusters", "r2_within"]].round(4).to_markdown(index=False) if not hs2_reg.empty else "No HS2 regression output."}
 
 ## Commodity-Outlier Exclusion
 
@@ -1537,11 +1622,83 @@ The regressions are descriptive. Positive coefficients support the idea that con
 
 
 def copy_figures_to_overleaf() -> None:
+    if ACTIVE_OUTPUT_SAMPLE != "prof_p_33":
+        return
     overleaf_figs = RESULTS / "overleaf_exercises_03_04_11" / "figures"
     if not overleaf_figs.exists():
         return
     for path in OUT_FIGURES.glob("*.png"):
         shutil.copy2(path, overleaf_figs / path.name)
+
+
+def relative_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def write_run_manifest(
+    args: argparse.Namespace,
+    panel: pd.DataFrame,
+    product_reg: pd.DataFrame,
+    conditional_logit: pd.DataFrame,
+    commodity_reg: pd.DataFrame,
+    sector: pd.DataFrame,
+    sector_reg: pd.DataFrame,
+    hs2: pd.DataFrame,
+    hs2_reg: pd.DataFrame,
+) -> None:
+    manifest = {
+        "created_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "command": " ".join([Path(sys.executable).name, *sys.argv]),
+        "country_sample": args.country_sample,
+        "rebuild_panel": bool(args.rebuild_panel),
+        "excluded_hs6_codes": sorted(EXCLUDED_HS6_CODES),
+        "hs6_999999_rows": {
+            "product_panel": excluded_hs6_count(panel),
+            "sector_panel": excluded_hs6_count(sector),
+            "hs2_panel": excluded_hs6_count(hs2, code_col="hs2"),
+        },
+        "source_dirs": {
+            "import_product": relative_path(IMPORT_PRODUCT_DIR),
+            "import_supplier": relative_path(IMPORT_SUPPLIER_DIR),
+            "export_canonical_exercise_02_12": relative_path(EXPORT_DIR),
+        },
+        "source_file_counts": {
+            "import_product_partials": len(list(IMPORT_PRODUCT_DIR.glob("*.parquet"))),
+            "import_supplier_partials": len(list(IMPORT_SUPPLIER_DIR.glob("*.parquet"))),
+            "export_partials": len(list(EXPORT_DIR.glob("*.parquet"))),
+        },
+        "row_counts": {
+            "product_panel": int(len(panel)),
+            "product_regressions": int(len(product_reg)),
+            "conditional_logit": int(len(conditional_logit)),
+            "commodity_regressions": int(len(commodity_reg)),
+            "sector_panel": int(len(sector)),
+            "sector_regressions": int(len(sector_reg)),
+            "hs2_panel": int(len(hs2)),
+            "hs2_regressions": int(len(hs2_reg)),
+        },
+        "outputs": {
+            "product_panel": relative_path(OUT_DATA),
+            "sector_panel": relative_path(OUT_SECTOR),
+            "hs2_panel": relative_path(OUT_HS2),
+            "tables": relative_path(OUT_TABLES),
+            "figures": relative_path(OUT_FIGURES),
+            "memo": relative_path(OUT_MEMO),
+        },
+        "notes": [
+            "Exercise 11 export linkage uses canonical Exercise 2/12 partials in exercise_02_12_file_aggregates.",
+            "HS6 999999 is excluded before panel construction, aggregation, regressions, figures, and outputs.",
+            "OLS p-values and confidence intervals use reporter-cluster Student-t references; country-year FE logit SEs remain Hessian/non-clustered and descriptive.",
+        ],
+        "exercises_md_updated": False,
+    }
+    if any(int(value) != 0 for value in manifest["hs6_999999_rows"].values()):
+        raise RuntimeError(f"Exercise 11 manifest found excluded HS6 rows: {manifest['hs6_999999_rows']}")
+    OUT_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
+    OUT_MANIFEST.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def parse_args() -> argparse.Namespace:
@@ -1551,13 +1708,27 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Rebuild the product-export-linkage panel instead of reusing the cached parquet.",
     )
+    parser.add_argument("--country-sample", choices=COUNTRY_SAMPLE_CHOICES, default="prof_p_33")
+    parser.add_argument("--min-available-years", type=int, default=10)
+    parser.add_argument("--start-year", type=int, default=1988)
+    parser.add_argument("--end-year", type=int, default=None)
+    parser.add_argument("--refresh-availability", action="store_true")
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    configure_country_sample(
+        country_sample=args.country_sample,
+        min_available_years=args.min_available_years,
+        start_year=args.start_year,
+        end_year=args.end_year,
+        refresh_availability=args.refresh_availability,
+    )
+    configure_sample_paths(args.country_sample)
     ensure_dirs()
     panel = load_or_build_product_panel(rebuild=args.rebuild_panel)
+    assert_no_excluded_hs6(panel, "Exercise 11 product panel before regressions")
     product_reg, effects = run_product_regressions(panel)
     conditional_logit = run_conditional_logit(panel)
     commodity_reg, commodity_effects, commodity_comparison = run_commodity_exclusion(panel, product_reg)
@@ -1572,8 +1743,10 @@ def main() -> int:
     make_tables(panel, sector, hs2, product_reg, conditional_logit, sector_reg, hs2_reg, commodity_stats)
     write_memo(panel, product_reg, conditional_logit, sector, sector_reg, hs2, hs2_reg, commodity_comparison)
     copy_figures_to_overleaf()
+    write_run_manifest(args, panel, product_reg, conditional_logit, commodity_reg, sector, sector_reg, hs2, hs2_reg)
     print(f"wrote {OUT_TABLES.relative_to(ROOT)}")
     print(f"wrote {OUT_FIGURES.relative_to(ROOT)}")
+    print(f"wrote {OUT_MANIFEST.relative_to(ROOT)}")
     return 0
 
 

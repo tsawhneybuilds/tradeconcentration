@@ -15,6 +15,7 @@ from pathlib import Path
 import pandas as pd
 
 from trade_concentration_pipeline import (
+    COUNTRY_SAMPLE_CHOICES,
     DATA_PROCESSED,
     EX06_TABLES,
     RESULTS,
@@ -74,7 +75,7 @@ def load_leaf_cells(partial: Path) -> pd.DataFrame:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Recompute Exercise 6 from Exercise 2/12 checkpoints.")
-    parser.add_argument("--country-sample", choices=["prof_p_33", "world_broad"], default="prof_p_33")
+    parser.add_argument("--country-sample", choices=COUNTRY_SAMPLE_CHOICES, default="prof_p_33")
     parser.add_argument("--min-available-years", type=int, default=10)
     parser.add_argument("--start-year", type=int, default=1988)
     parser.add_argument("--end-year", type=int, default=None)

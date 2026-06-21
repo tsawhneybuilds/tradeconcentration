@@ -2,8 +2,10 @@
 """Build Partner-Gini counterfactual outputs for Exercise 4.
 
 The counterfactual is descriptive, not causal. It asks how much aggregate import
-Partner Gini would fall if each HS6 product's observed suppliers received equal
-shares of that product's import value.
+Partner Gini would fall if each identified HS6 product's observed suppliers
+received equal shares of that product's import value. HS6 999999 is included in
+actual partner totals but held fixed in the product-based counterfactual because
+it is not a real product identity.
 """
 
 from __future__ import annotations
@@ -16,12 +18,23 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from concentration_metrics import active_gini
+from trade_concentration_pipeline import (
+    COUNTRY_SAMPLE_CHOICES,
+    configure_country_sample,
+    sample_processed_dir,
+    sample_results_dir,
+    save_country_panel,
+)
+
 
 ROOT = Path(__file__).resolve().parents[1]
-CELL_DIR = ROOT / "data/processed/exercise_04_file_aggregates"
-TABLE_DIR = ROOT / "results/exercise_04_tables"
-FIGURE_DIR = ROOT / "results/exercise_04_figures"
-EX1_SOURCE = ROOT / "results/exercise_01_tables/concentration_all_years.csv"
+DATA_PROCESSED = ROOT / "data" / "processed"
+RESULTS = ROOT / "results"
+CELL_DIR = DATA_PROCESSED / "exercise_04_file_aggregates"
+TABLE_DIR = RESULTS / "exercise_04_tables"
+FIGURE_DIR = RESULTS / "exercise_04_figures"
+EX1_SOURCE = RESULTS / "exercise_01_tables/concentration_all_years.csv"
 SUMMARY_SOURCE = TABLE_DIR / "dominant_supplier_importer_summary.csv"
 
 COUNTRY_YEAR_OUTPUT = TABLE_DIR / "partner_gini_counterfactual_country_year.csv"
@@ -35,18 +48,35 @@ TOTAL_TOLERANCE_RELATIVE = 1e-8
 RANDOM_SHARE_VECTOR_GINI = 0.5
 
 
-def gini(values: pd.Series | np.ndarray | list[float]) -> float:
-    arr = np.asarray(list(values), dtype=float)
-    arr = arr[np.isfinite(arr) & (arr > 0)]
-    if arr.size == 0:
-        return np.nan
-    arr.sort()
-    n = arr.size
-    total = arr.sum()
-    if total <= 0:
-        return np.nan
-    idx = np.arange(1, n + 1)
-    return float((2 * np.sum(idx * arr) / (n * total)) - ((n + 1) / n))
+# Keep the legacy local name; this is active-positive by design.
+gini = active_gini
+
+
+def configure_sample_paths(country_sample: str) -> None:
+    result_base = sample_results_dir(country_sample)
+    processed_base = sample_processed_dir(country_sample)
+    global CELL_DIR
+    global TABLE_DIR
+    global FIGURE_DIR
+    global EX1_SOURCE
+    global SUMMARY_SOURCE
+    global COUNTRY_YEAR_OUTPUT
+    global LATEST_OUTPUT
+    global LATEST_FIGURE
+    global INDIA_FIGURE
+    CELL_DIR = (
+        DATA_PROCESSED / "exercise_04_file_aggregates"
+        if country_sample == "prof_p_33"
+        else processed_base / "checkpoints" / "exercise_04_file_aggregates"
+    )
+    TABLE_DIR = result_base / "exercise_04_tables"
+    FIGURE_DIR = result_base / "exercise_04_figures"
+    EX1_SOURCE = result_base / "exercise_01_tables" / "concentration_all_years.csv"
+    SUMMARY_SOURCE = TABLE_DIR / "dominant_supplier_importer_summary.csv"
+    COUNTRY_YEAR_OUTPUT = TABLE_DIR / "partner_gini_counterfactual_country_year.csv"
+    LATEST_OUTPUT = TABLE_DIR / "partner_gini_counterfactual_latest.csv"
+    LATEST_FIGURE = FIGURE_DIR / "partner_gini_counterfactual_latest.png"
+    INDIA_FIGURE = FIGURE_DIR / "india_partner_gini_counterfactual_timeseries.png"
 
 
 def pct_axis(ax: plt.Axes) -> None:
@@ -59,24 +89,27 @@ def read_reference_tables() -> tuple[pd.DataFrame, pd.DataFrame]:
     if not SUMMARY_SOURCE.exists():
         raise FileNotFoundError(f"Missing Exercise 4 summary table: {SUMMARY_SOURCE}")
 
-    ex1 = pd.read_csv(
-        EX1_SOURCE,
-        usecols=[
-            "country",
-            "iso3",
-            "reporter_code",
-            "year",
-            "flow",
-            "variant",
-            "total_trade_value",
-            "partner_gini",
-            "partner_active_count",
-        ],
-    )
+    ex1_header = pd.read_csv(EX1_SOURCE, nrows=0)
+    ex1_usecols = [
+        "country",
+        "iso3",
+        "reporter_code",
+        "year",
+        "flow",
+        "variant",
+        "total_trade_value",
+        "partner_gini",
+        "partner_active_count",
+    ]
+    if "partner_total_trade_value" in ex1_header.columns:
+        ex1_usecols.append("partner_total_trade_value")
+    ex1 = pd.read_csv(EX1_SOURCE, usecols=ex1_usecols)
+    if "partner_total_trade_value" not in ex1.columns:
+        ex1["partner_total_trade_value"] = ex1["total_trade_value"]
     ex1 = ex1[
         ex1["flow"].astype(str).eq("Imports") & ex1["variant"].astype(str).str.lower().eq("baseline")
     ].copy()
-    for column in ["reporter_code", "year", "total_trade_value", "partner_gini", "partner_active_count"]:
+    for column in ["reporter_code", "year", "total_trade_value", "partner_total_trade_value", "partner_gini", "partner_active_count"]:
         ex1[column] = pd.to_numeric(ex1[column], errors="coerce")
     ex1 = ex1.dropna(subset=["reporter_code", "year", "iso3"]).copy()
     ex1["reporter_code"] = ex1["reporter_code"].astype(int)
@@ -102,43 +135,56 @@ def normalize_cells(path: Path) -> pd.DataFrame:
     cells = cells.dropna(subset=["reporter_code", "year", "cmd_code", "partner_code", "trade_value"])
     cells = cells[cells["trade_value"] > 0].copy()
     if cells.empty:
-        raise RuntimeError(f"No positive import cells in {path}")
+        return cells
     cells["reporter_code"] = cells["reporter_code"].astype(int)
     cells["year"] = cells["year"].astype(int)
     cells["partner_code"] = cells["partner_code"].astype(int)
     return cells.groupby(["reporter_code", "year", "cmd_code", "partner_code"], as_index=False)["trade_value"].sum()
 
 
-def compute_country_year(path: Path) -> dict[str, float | int | str]:
+def compute_country_year(path: Path) -> dict[str, float | int | str] | None:
     cells = normalize_cells(path)
+    if cells.empty:
+        return None
     reporter_code = int(cells["reporter_code"].iloc[0])
     year = int(cells["year"].iloc[0])
     if cells["reporter_code"].nunique() != 1 or cells["year"].nunique() != 1:
         raise RuntimeError(f"Expected one reporter-year per file, found multiple in {path}")
 
+    identified_cells = cells[cells["cmd_code"] != "999999"].copy()
+    unspecified_cells = cells[cells["cmd_code"] == "999999"].copy()
+
     actual_total = float(cells["trade_value"].sum())
+    actual_total_excluding_999999 = float(identified_cells["trade_value"].sum())
+    unspecified_total = float(unspecified_cells["trade_value"].sum())
     partner_totals = cells.groupby("partner_code")["trade_value"].sum()
-    product_totals = cells.groupby("cmd_code", as_index=False)["trade_value"].sum().rename(
+    product_totals = identified_cells.groupby("cmd_code", as_index=False)["trade_value"].sum().rename(
         columns={"trade_value": "product_total"}
     )
-    supplier_counts = cells.groupby("cmd_code", as_index=False)["partner_code"].nunique().rename(
+    supplier_counts = identified_cells.groupby("cmd_code", as_index=False)["partner_code"].nunique().rename(
         columns={"partner_code": "observed_suppliers"}
     )
     product_stats = product_totals.merge(supplier_counts, on="cmd_code", how="inner")
-    if (product_stats["observed_suppliers"] <= 0).any():
+    if not product_stats.empty and (product_stats["observed_suppliers"] <= 0).any():
         raise RuntimeError(f"Observed supplier count is zero in {path}")
 
-    equalized = cells.merge(product_stats, on="cmd_code", how="left")
-    equalized["equalized_imports"] = equalized["product_total"] / equalized["observed_suppliers"]
-    equalized_partner_totals = equalized.groupby("partner_code")["equalized_imports"].sum()
-    equalized_product_totals = equalized.groupby("cmd_code")["equalized_imports"].sum()
-    product_check = product_totals.set_index("cmd_code")["product_total"].sort_index()
-    product_error = float((equalized_product_totals.sort_index() - product_check).abs().max())
+    unspecified_partner_totals = unspecified_cells.groupby("partner_code")["trade_value"].sum()
+    if product_stats.empty:
+        equalized_partner_totals = unspecified_partner_totals.copy()
+        product_error = 0.0
+    else:
+        equalized = identified_cells.merge(product_stats, on="cmd_code", how="left")
+        equalized["equalized_imports"] = equalized["product_total"] / equalized["observed_suppliers"]
+        equalized_partner_totals = equalized.groupby("partner_code")["equalized_imports"].sum()
+        equalized_product_totals = equalized.groupby("cmd_code")["equalized_imports"].sum()
+        product_check = product_totals.set_index("cmd_code")["product_total"].sort_index()
+        product_error = float((equalized_product_totals.sort_index() - product_check).abs().max())
+        equalized_partner_totals = equalized_partner_totals.add(unspecified_partner_totals, fill_value=0.0)
     conservative_total = float(equalized_partner_totals.sum())
 
     active_partners = int(partner_totals.size)
     full_diffusion_partner_gini = 0.0 if active_partners > 0 else np.nan
-    full_diffusion_total = float(product_stats["product_total"].sum())
+    full_diffusion_total = actual_total
 
     actual_partner_gini = gini(partner_totals)
     counterfactual_partner_gini = gini(equalized_partner_totals)
@@ -155,6 +201,9 @@ def compute_country_year(path: Path) -> dict[str, float | int | str]:
         "reporter_code": reporter_code,
         "year": year,
         "total_imports_cells": actual_total,
+        "total_imports_cells_excluding_999999": actual_total_excluding_999999,
+        "unspecified_imports_cells": unspecified_total,
+        "unspecified_import_share": unspecified_total / actual_total if actual_total > 0 else np.nan,
         "active_products": int(product_stats["cmd_code"].nunique()),
         "active_partners": active_partners,
         "actual_partner_gini": actual_partner_gini,
@@ -176,7 +225,18 @@ def build_counterfactual(ex1: pd.DataFrame, summary: pd.DataFrame) -> pd.DataFra
     if not files:
         raise FileNotFoundError(f"No Exercise 4 parquet cells found in {CELL_DIR}")
 
-    rows = [compute_country_year(path) for path in files]
+    rows: list[dict[str, float | int | str]] = []
+    skipped_empty = 0
+    for path in files:
+        row = compute_country_year(path)
+        if row is None:
+            skipped_empty += 1
+            continue
+        rows.append(row)
+    if not rows:
+        raise RuntimeError(f"No positive import cells found across Exercise 4 parquet files in {CELL_DIR}")
+    if skipped_empty:
+        print(f"Skipped {skipped_empty:,} Exercise 4 checkpoint files with no positive import cells.", flush=True)
     country_year = pd.DataFrame(rows)
     country_year = country_year.merge(
         ex1[
@@ -186,12 +246,14 @@ def build_counterfactual(ex1: pd.DataFrame, summary: pd.DataFrame) -> pd.DataFra
                 "reporter_code",
                 "year",
                 "total_trade_value",
+                "partner_total_trade_value",
                 "partner_gini",
                 "partner_active_count",
             ]
         ].rename(
             columns={
-                "total_trade_value": "exercise1_total_imports",
+                "total_trade_value": "exercise1_product_total_imports",
+                "partner_total_trade_value": "exercise1_partner_total_imports",
                 "partner_gini": "exercise1_partner_gini",
                 "partner_active_count": "exercise1_partner_active_count",
             }
@@ -219,11 +281,17 @@ def build_counterfactual(ex1: pd.DataFrame, summary: pd.DataFrame) -> pd.DataFra
         country_year["actual_partner_gini"] - country_year["exercise1_partner_gini"]
     ).abs()
     country_year["exercise4_total_abs_diff"] = (
-        country_year["total_imports_cells"] - country_year["exercise4_summary_total_imports"]
+        country_year["total_imports_cells_excluding_999999"] - country_year["exercise4_summary_total_imports"]
+    ).abs()
+    country_year["exercise1_product_total_abs_diff"] = (
+        country_year["total_imports_cells_excluding_999999"] - country_year["exercise1_product_total_imports"]
+    ).abs()
+    country_year["exercise1_partner_total_abs_diff"] = (
+        country_year["total_imports_cells"] - country_year["exercise1_partner_total_imports"]
     ).abs()
     country_year["exercise1_total_abs_diff"] = (
-        country_year["total_imports_cells"] - country_year["exercise1_total_imports"]
-    ).abs()
+        country_year["exercise1_partner_total_abs_diff"]
+    )
     return country_year.sort_values(["country", "year"]).reset_index(drop=True)
 
 
@@ -232,7 +300,7 @@ def latest_rows(country_year: pd.DataFrame) -> pd.DataFrame:
     return latest.sort_values(["partner_gini_reduction", "country"], ascending=[False, True]).reset_index(drop=True)
 
 
-def validate_outputs(country_year: pd.DataFrame, gini_tolerance: float) -> None:
+def validate_outputs(country_year: pd.DataFrame, gini_tolerance: float, expected_latest_count: int) -> None:
     if country_year["country"].isna().any() or country_year["iso3"].isna().any():
         missing = country_year[country_year["iso3"].isna() | country_year["country"].isna()]
         raise RuntimeError(f"Missing country metadata for {len(missing)} country-years.")
@@ -259,6 +327,12 @@ def validate_outputs(country_year: pd.DataFrame, gini_tolerance: float) -> None:
     if summary_total_error > total_tolerance:
         raise RuntimeError(f"Exercise 4 summary totals mismatch parquet cells; max error {summary_total_error:g}")
 
+    ex1_partner_total_error = float(country_year["exercise1_partner_total_abs_diff"].max())
+    if ex1_partner_total_error > total_tolerance:
+        raise RuntimeError(
+            f"Exercise 1 partner totals mismatch parquet cells; max error {ex1_partner_total_error:g}"
+        )
+
     max_gini_diff = float(country_year["partner_gini_validation_abs_diff"].max())
     if max_gini_diff > gini_tolerance:
         raise RuntimeError(
@@ -267,8 +341,8 @@ def validate_outputs(country_year: pd.DataFrame, gini_tolerance: float) -> None:
         )
 
     latest_count = latest_rows(country_year)["iso3"].nunique()
-    if latest_count != 33:
-        raise RuntimeError(f"Expected 33 latest country rows, found {latest_count}.")
+    if latest_count != expected_latest_count:
+        raise RuntimeError(f"Expected {expected_latest_count} latest country rows, found {latest_count}.")
     india = country_year[country_year["iso3"].eq("IND")]
     if india.empty:
         raise RuntimeError("India is missing from the Partner-Gini counterfactual output.")
@@ -383,6 +457,11 @@ def save_figures(country_year: pd.DataFrame, latest: pd.DataFrame) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--country-sample", choices=COUNTRY_SAMPLE_CHOICES, default="rd2_countries")
+    parser.add_argument("--min-available-years", type=int, default=10)
+    parser.add_argument("--start-year", type=int, default=1988)
+    parser.add_argument("--end-year", type=int, default=None)
+    parser.add_argument("--refresh-availability", action="store_true")
     parser.add_argument("--skip-figures", action="store_true", help="Write CSV outputs but skip PNG figure generation.")
     parser.add_argument(
         "--gini-validation-tolerance",
@@ -398,10 +477,19 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    configure_country_sample(
+        country_sample=args.country_sample,
+        min_available_years=args.min_available_years,
+        start_year=args.start_year,
+        end_year=args.end_year,
+        refresh_availability=args.refresh_availability,
+    )
+    configure_sample_paths(args.country_sample)
+    expected_latest_count = int(save_country_panel()["iso3"].nunique())
     ex1, summary = read_reference_tables()
     country_year = build_counterfactual(ex1, summary)
     latest = latest_rows(country_year)
-    validate_outputs(country_year, args.gini_validation_tolerance)
+    validate_outputs(country_year, args.gini_validation_tolerance, expected_latest_count)
     save_tables(country_year, latest)
     if not args.skip_figures:
         save_figures(country_year, latest)

@@ -1,6 +1,6 @@
 # Exercise 6: Oil / High-Unit-Value Exclusion Tests
 
-Generated: 2026-05-22T08:48:05+00:00
+Generated: 2026-05-27T10:22:41+00:00
 
 This memo is intentionally descriptive. `exercises.md` should only be updated after discussion.
 
@@ -18,16 +18,16 @@ HS87 vehicles and parts are intentionally not excluded here because the chapter 
 
 |                                      |   product_gini |   trade_share_removed |
 |:-------------------------------------|---------------:|----------------------:|
-| ('Exports', 'baseline')              |          0.907 |                 0     |
-| ('Exports', 'full_exclusion')        |          0.901 |                 0.086 |
-| ('Exports', 'oil_aircraft')          |          0.904 |                 0.053 |
-| ('Exports', 'oil_aircraft_precious') |          0.901 |                 0.073 |
-| ('Exports', 'oil_only')              |          0.904 |                 0.04  |
-| ('Imports', 'baseline')              |          0.854 |                 0     |
-| ('Imports', 'full_exclusion')        |          0.836 |                 0.139 |
-| ('Imports', 'oil_aircraft')          |          0.839 |                 0.115 |
-| ('Imports', 'oil_aircraft_precious') |          0.837 |                 0.133 |
-| ('Imports', 'oil_only')              |          0.84  |                 0.099 |
+| ('Exports', 'baseline')              |          0.92  |                 0     |
+| ('Exports', 'full_exclusion')        |          0.913 |                 0.062 |
+| ('Exports', 'oil_aircraft')          |          0.915 |                 0.028 |
+| ('Exports', 'oil_aircraft_precious') |          0.913 |                 0.051 |
+| ('Exports', 'oil_only')              |          0.916 |                 0.015 |
+| ('Imports', 'baseline')              |          0.897 |                 0     |
+| ('Imports', 'full_exclusion')        |          0.88  |                 0.094 |
+| ('Imports', 'oil_aircraft')          |          0.884 |                 0.062 |
+| ('Imports', 'oil_aircraft_precious') |          0.88  |                 0.086 |
+| ('Imports', 'oil_only')              |          0.884 |                 0.043 |
 
 ## Files
 

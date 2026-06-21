@@ -1,6 +1,6 @@
 # Exercise 8: EDD + WBES Public Proxy
 
-Generated: 2026-05-19T13:42:56+00:00
+Generated: 2026-05-24T09:05:08+00:00
 
 ## What This Tests
 
@@ -22,18 +22,18 @@ EDD tells us whether countries with concentrated exporters also have concentrate
 
 | outcome | predictor | nobs | pearson | spearman |
 | --- | --- | --- | --- | --- |
-| product_gini | top_5pct_exporter_share | 124 | 0.6318 | 0.6913 |
-| product_top_5pct_share | top_5pct_exporter_share | 124 | 0.6624 | 0.6654 |
-| product_partner_cell_gini | top_5pct_exporter_share | 124 | 0.6742 | 0.6043 |
-| product_gini | destinations_per_exporter_mean | 124 | -0.6076 | -0.6042 |
-| product_partner_cell_top_5pct_share | destinations_per_exporter_mean | 124 | -0.5598 | -0.5995 |
-| product_gini | exporter_hhi | 124 | 0.3627 | 0.5964 |
-| product_top_5pct_share | destinations_per_exporter_mean | 124 | -0.6056 | -0.5945 |
-| product_gini | top_1pct_exporter_share | 124 | 0.5098 | 0.5845 |
-| product_top_5pct_share | number_exporters | 124 | -0.5895 | -0.5827 |
-| product_gini | number_exporters | 124 | -0.6458 | -0.5807 |
-| product_top_5pct_share | exporter_hhi | 124 | 0.3638 | 0.5796 |
-| product_partner_cell_top_5pct_share | top_5pct_exporter_share | 124 | 0.6596 | 0.5751 |
+| product_gini | top_5pct_exporter_share | 124 | 0.6264 | 0.6768 |
+| product_top_5pct_share | top_5pct_exporter_share | 124 | 0.6557 | 0.6506 |
+| product_partner_cell_top_5pct_share | destinations_per_exporter_mean | 124 | -0.5684 | -0.6225 |
+| product_gini | destinations_per_exporter_mean | 124 | -0.6225 | -0.6202 |
+| product_top_5pct_share | destinations_per_exporter_mean | 124 | -0.6213 | -0.6051 |
+| product_partner_cell_gini | top_5pct_exporter_share | 124 | 0.6621 | 0.5916 |
+| product_gini | exporter_hhi | 124 | 0.3603 | 0.5762 |
+| product_gini | top_1pct_exporter_share | 124 | 0.5048 | 0.5718 |
+| product_partner_cell_gini | destinations_per_exporter_mean | 124 | -0.5250 | -0.5695 |
+| product_gini | number_exporters | 124 | -0.6417 | -0.5643 |
+| product_partner_cell_top_5pct_share | top_5pct_exporter_share | 124 | 0.6460 | 0.5629 |
+| product_top_5pct_share | number_exporters | 124 | -0.5833 | -0.5626 |
 
 ### Largest EDD Standardized OLS Coefficients
 
@@ -41,18 +41,18 @@ Outcome and single predictor are standardized. Controls are log total exports, l
 
 | outcome | predictor | coefficient | std_error_hc1 | nobs | r_squared |
 | --- | --- | --- | --- | --- | --- |
-| partner_gini | destinations_per_exporter_median | -0.3203 | 0.0677 | 124 | 0.7262 |
-| top_5_partner_share | destinations_per_exporter_median | -0.2217 | 0.0624 | 124 | 0.7724 |
-| product_gini | number_exporters | -0.2015 | 0.0336 | 124 | 0.9270 |
-| top_5_partner_share | top_1pct_exporter_share | -0.1443 | 0.0515 | 124 | 0.7563 |
-| top_5_partner_share | destinations_per_exporter_mean | -0.1427 | 0.0839 | 124 | 0.7477 |
-| partner_gini | number_exporters | 0.1295 | 0.0825 | 124 | 0.6694 |
-| product_top_5pct_share | number_exporters | -0.1287 | 0.0335 | 124 | 0.9325 |
-| partner_gini | top_25pct_exporter_share | 0.1283 | 0.0450 | 124 | 0.6707 |
-| top_5_partner_share | top_5pct_exporter_share | -0.1244 | 0.0614 | 124 | 0.7494 |
-| product_partner_cell_top_5pct_share | hs6_products_per_exporter_median | -0.1234 | 0.0337 | 124 | 0.8959 |
-| product_partner_cell_gini | hs6_products_per_exporter_median | -0.1144 | 0.0347 | 124 | 0.8992 |
-| product_top_5pct_share | top_5pct_exporter_share | 0.1114 | 0.0278 | 124 | 0.9315 |
+| partner_gini | destinations_per_exporter_median | -0.3058 | 0.0663 | 124 | 0.7406 |
+| top_5_partner_share | destinations_per_exporter_median | -0.2360 | 0.0615 | 124 | 0.7780 |
+| product_gini | number_exporters | -0.2096 | 0.0333 | 124 | 0.9281 |
+| top_5_partner_share | destinations_per_exporter_mean | -0.1888 | 0.0836 | 124 | 0.7537 |
+| partner_gini | number_exporters | 0.1494 | 0.0803 | 124 | 0.6920 |
+| product_top_5pct_share | number_exporters | -0.1372 | 0.0341 | 124 | 0.9312 |
+| top_5_partner_share | top_1pct_exporter_share | -0.1353 | 0.0524 | 124 | 0.7560 |
+| product_partner_cell_top_5pct_share | hs6_products_per_exporter_median | -0.1263 | 0.0348 | 124 | 0.8877 |
+| partner_gini | destinations_per_exporter_mean | -0.1208 | 0.0916 | 124 | 0.6865 |
+| product_partner_cell_gini | hs6_products_per_exporter_median | -0.1167 | 0.0359 | 124 | 0.8922 |
+| partner_gini | top_25pct_exporter_share | 0.1122 | 0.0464 | 124 | 0.6884 |
+| top_5_partner_share | top_5pct_exporter_share | -0.1113 | 0.0640 | 124 | 0.7493 |
 
 
 ## WBES Firm-Survey Proxy
@@ -121,9 +121,9 @@ If EDD exporter concentration lines up with aggregate concentration, and WBES ex
 
 ```json
 {
-  "created_at_utc": "2026-05-19T13:42:56+00:00",
+  "created_at_utc": "2026-05-24T09:05:08+00:00",
   "edd": {
-    "created_at_utc": "2026-05-19T13:42:52+00:00",
+    "created_at_utc": "2026-05-24T09:05:04+00:00",
     "exercise1_csv": "/Users/tanushsawhney/Desktop/profps26/results/exercise_01_tables/concentration_all_years.csv",
     "min_n": 10,
     "no_synthetic_or_inferred_trade_values": true,

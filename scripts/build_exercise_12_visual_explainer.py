@@ -38,6 +38,7 @@ DIMENSION_LABELS = {
 }
 
 MODE_LABELS = {
+    "hs6_harmonized_family": "Harmonized HS6 family",
     "hs6_revision": "HS6 same revision",
     "hs4": "HS4",
     "hs2": "HS2",
@@ -71,7 +72,7 @@ def main_identity_filter(df: pd.DataFrame) -> pd.Series:
         (df["top_definition"] == "top_10")
         & (
             ((df["dimension"] == "partner") & (df["item_id_mode"] == "partner"))
-            | ((df["dimension"].isin(["product", "product_partner_cell"])) & (df["item_id_mode"] == "hs6_revision"))
+            | ((df["dimension"].isin(["product", "product_partner_cell"])) & (df["item_id_mode"] == "hs6_harmonized_family"))
         )
     )
 
@@ -137,7 +138,7 @@ def make_gross_source(gross: pd.DataFrame) -> pd.DataFrame:
 
 
 def make_robustness_source(net: pd.DataFrame) -> pd.DataFrame:
-    keep_modes = ["hs6_revision", "hs4", "hs2", "cpa"]
+    keep_modes = ["hs6_harmonized_family", "hs6_revision", "hs4", "hs2", "cpa"]
     keep_drivers = ["existing_non_top_10", "new_item"]
     work = net[
         (net["dimension"].isin(["product", "product_partner_cell"]))
@@ -179,7 +180,7 @@ def make_country_source(net: pd.DataFrame) -> pd.DataFrame:
 
     cells = net[
         (net["dimension"] == "product_partner_cell")
-        & (net["item_id_mode"] == "hs6_revision")
+        & (net["item_id_mode"] == "hs6_harmonized_family")
         & (net["top_definition"] == "top_10")
         & (net["horizon"] == 5)
         & (net["driver_category"] == "new_item")
@@ -192,7 +193,7 @@ def make_country_source(net: pd.DataFrame) -> pd.DataFrame:
 def make_transition_note_source(transitions: pd.DataFrame) -> dict:
     work = transitions[
         (transitions["dimension"] == "product_partner_cell")
-        & (transitions["item_id_mode"] == "hs6_revision")
+        & (transitions["item_id_mode"] == "hs6_harmonized_family")
         & (transitions["top_definition"] == "top_10")
         & (transitions["horizon"] == 5)
     ].copy()

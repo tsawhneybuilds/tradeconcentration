@@ -21,6 +21,7 @@ if str(ROOT / "scripts") not in sys.path:
     sys.path.insert(0, str(ROOT / "scripts"))
 
 from trade_concentration_pipeline import (  # noqa: E402
+    COUNTRY_SAMPLE_CHOICES,
     DATA_PROCESSED,
     EX06_FIGURES,
     EX06_TABLES,
@@ -29,11 +30,10 @@ from trade_concentration_pipeline import (  # noqa: E402
     compute_exercise_06_outputs_for_leaf,
     configure_country_sample,
     ensure_dirs,
-    extract_leaf_trade,
     hs_bulk_files,
+    iter_leaf_trade_chunks,
     make_exercise_06_figures,
     now_utc,
-    read_comtrade_file,
     save_country_panel,
     sample_processed_dir,
     sample_processed_path,
@@ -89,7 +89,7 @@ def atomic_write_csv(df: pd.DataFrame, destination: Path) -> None:
     tmp.replace(destination)
 
 
-def process_file(path_text: str, sample_config: dict) -> dict:
+def process_file(path_text: str, sample_config: dict, chunk_rows: int) -> dict:
     configure_country_sample(**sample_config)
     set_partial_dirs(sample_config["country_sample"])
     path = Path(path_text)
@@ -101,25 +101,33 @@ def process_file(path_text: str, sample_config: dict) -> dict:
     if done_path.exists() and out_path.exists():
         return {"file": path.name, "status": "skipped", "leaf_rows": None, "rows_exclusions": None}
 
-    raw = read_comtrade_file(path)
-    leaf = extract_leaf_trade(raw)
-    if leaf.empty:
+    panel = save_country_panel()
+    output_frames: list[pd.DataFrame] = []
+    removed_frames: list[pd.DataFrame] = []
+    leaf_rows = 0
+    for leaf in iter_leaf_trade_chunks(path, chunk_rows=chunk_rows):
+        if leaf.empty:
+            continue
+        leaf_rows += int(len(leaf))
+        outputs, removed = compute_exercise_06_outputs_for_leaf(leaf, panel)
+        output_frames.extend(outputs)
+        removed_frames.extend(removed)
+
+    if leaf_rows <= 0:
         done_path.parent.mkdir(parents=True, exist_ok=True)
         done_path.write_text("empty\n", encoding="utf-8")
         return {"file": path.name, "status": "empty", "leaf_rows": 0, "rows_exclusions": 0}
 
-    panel = save_country_panel()
-    outputs, removed = compute_exercise_06_outputs_for_leaf(leaf, panel)
-    if not outputs:
+    if not output_frames:
         done_path.parent.mkdir(parents=True, exist_ok=True)
         done_path.write_text("no_outputs\n", encoding="utf-8")
-        return {"file": path.name, "status": "no_outputs", "leaf_rows": int(len(leaf)), "rows_exclusions": 0}
+        return {"file": path.name, "status": "no_outputs", "leaf_rows": leaf_rows, "rows_exclusions": 0}
 
-    exclusions = pd.concat(outputs, ignore_index=True)
+    exclusions = pd.concat(output_frames, ignore_index=True)
     atomic_write_csv(exclusions, out_path)
 
-    if removed:
-        atomic_write_csv(pd.concat(removed, ignore_index=True), removed_path)
+    if removed_frames:
+        atomic_write_csv(pd.concat(removed_frames, ignore_index=True), removed_path)
     elif removed_path.exists():
         removed_path.unlink()
 
@@ -128,7 +136,7 @@ def process_file(path_text: str, sample_config: dict) -> dict:
     return {
         "file": path.name,
         "status": "done",
-        "leaf_rows": int(len(leaf)),
+        "leaf_rows": leaf_rows,
         "rows_exclusions": int(len(exclusions)),
     }
 
@@ -140,7 +148,7 @@ def read_partials(paths: list[Path]) -> pd.DataFrame:
     return pd.concat(frames, ignore_index=True)
 
 
-def finalize(files_seen: int, workers: int, country_sample: str) -> None:
+def finalize(files_seen: int, workers: int, country_sample: str, chunk_rows: int) -> None:
     exclusion_partials = sorted(EXCLUSIONS_PARTIAL_DIR.glob("*.csv"))
     if not exclusion_partials:
         raise RuntimeError(f"No Exercise 6 exclusion partials found in {EXCLUSIONS_PARTIAL_DIR}")
@@ -166,12 +174,13 @@ def finalize(files_seen: int, workers: int, country_sample: str) -> None:
     make_exercise_06_figures(exclusions)
     write_exercise_06_memo(exclusions)
     write_json(
-        RESULTS / "run_manifest_exercise_06_raw_checkpoints.json",
+        sample_results_dir(country_sample) / "run_manifest_exercise_06_raw_checkpoints.json",
         {
             "created_at_utc": now_utc(),
             "mode": "exercise_06_raw_checkpoints",
             "country_sample": country_sample,
             "workers": workers,
+            "chunk_rows": int(chunk_rows),
             "raw_files_seen": files_seen,
             "partials_exclusions": len(exclusion_partials),
             "done_markers": len(list(DONE_DIR.glob("*.done"))),
@@ -187,10 +196,11 @@ def finalize(files_seen: int, workers: int, country_sample: str) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Resumable raw Comtrade rerun for Exercise 6.")
     parser.add_argument("--workers", type=int, default=min(8, os.cpu_count() or 1))
+    parser.add_argument("--chunk-rows", type=int, default=300_000)
     parser.add_argument("--max-files", type=int, default=None)
     parser.add_argument("--finalize-only", action="store_true")
     parser.add_argument("--fresh", action="store_true", help="Remove existing Exercise 6 partials before processing.")
-    parser.add_argument("--country-sample", choices=["prof_p_33", "world_broad"], default="prof_p_33")
+    parser.add_argument("--country-sample", choices=COUNTRY_SAMPLE_CHOICES, default="prof_p_33")
     parser.add_argument("--min-available-years", type=int, default=10)
     parser.add_argument("--start-year", type=int, default=1988)
     parser.add_argument("--end-year", type=int, default=None)
@@ -215,7 +225,7 @@ def main() -> int:
 
     if not args.finalize_only:
         with ProcessPoolExecutor(max_workers=args.workers) as executor:
-            futures = {executor.submit(process_file, str(path), sample_config): path for path in files}
+            futures = {executor.submit(process_file, str(path), sample_config, args.chunk_rows): path for path in files}
             for completed, future in enumerate(as_completed(futures), start=1):
                 result = future.result()
                 print(
@@ -224,7 +234,7 @@ def main() -> int:
                     flush=True,
                 )
 
-    finalize(files_seen=len(files), workers=args.workers, country_sample=args.country_sample)
+    finalize(files_seen=len(files), workers=args.workers, country_sample=args.country_sample, chunk_rows=args.chunk_rows)
     return 0
 
 

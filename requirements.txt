@@ -4,7 +4,10 @@ pyarrow
 duckdb
 matplotlib
 seaborn
+plotly
 tabulate
 requests
 comtradeapicall
 psutil
+pdfplumber
+linearmodels

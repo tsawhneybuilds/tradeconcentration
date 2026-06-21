@@ -15,6 +15,7 @@ from pathlib import Path
 import pyarrow.parquet as pq
 
 from trade_concentration_pipeline import (
+    COUNTRY_SAMPLE_CHOICES,
     DEFAULT_CHUNK_ROWS,
     EX03_PARTIAL_DIR,
     EX04_PARTIAL_DIR,
@@ -230,7 +231,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workers", type=int, default=1, help="Parallel raw-file workers for checkpoint creation.")
     parser.add_argument("--chunk-rows", type=int, default=DEFAULT_CHUNK_ROWS, help="Raw Comtrade rows per chunk.")
     parser.add_argument("--memory-limit-gb", type=float, default=None, help="Optional process memory cap.")
-    parser.add_argument("--country-sample", choices=["prof_p_33", "world_broad"], default="prof_p_33")
+    parser.add_argument("--country-sample", choices=COUNTRY_SAMPLE_CHOICES, default="prof_p_33")
     parser.add_argument("--min-available-years", type=int, default=10)
     parser.add_argument("--start-year", type=int, default=1988)
     parser.add_argument("--end-year", type=int, default=None)

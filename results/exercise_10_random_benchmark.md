@@ -1,6 +1,6 @@
 # Exercise 10: Random Benchmark / Null Model
 
-Generated: 2026-05-22T08:51:33+00:00
+Generated: 2026-05-27T11:43:30+00:00
 
 This memo is intentionally descriptive. `exercises.md` should only be updated after discussion.
 
@@ -9,12 +9,12 @@ This memo is intentionally descriptive. `exercises.md` should only be updated af
 ```text
                               actual_gini  sim_gini_median  actual_minus_sim_median_gini  actual_gini_percentile
 dimension            flow
-partner              Exports        0.897            0.498                         0.399                     1.0
-                     Imports        0.901            0.497                         0.403                     1.0
-product              Exports        0.907            0.500                         0.407                     1.0
-                     Imports        0.854            0.500                         0.354                     1.0
-product_partner_cell Exports        0.949            0.500                         0.449                     1.0
-                     Imports        0.940            0.500                         0.440                     1.0
+partner              Exports        0.897            0.497                         0.400                     1.0
+                     Imports        0.897            0.497                         0.400                     1.0
+product              Exports        0.932            0.500                         0.432                     1.0
+                     Imports        0.871            0.500                         0.371                     1.0
+product_partner_cell Exports        0.954            0.500                         0.454                     1.0
+                     Imports        0.941            0.500                         0.441                     1.0
 ```
 
 ## Share Of Country-Year-Flow Observations Above 95th Benchmark Percentile
@@ -34,8 +34,8 @@ product_partner_cell  Exports    1.0
 ```text
 dimension
 partner                 0.000
-product                 0.994
-product_partner_cell    1.000
+product                 0.981
+product_partner_cell    0.992
 ```
 
 ## Benchmark Design

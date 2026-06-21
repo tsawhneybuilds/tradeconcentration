@@ -20,6 +20,7 @@ import math
 import os
 import re
 import shutil
+import subprocess
 import sys
 import textwrap
 import time
@@ -34,6 +35,8 @@ import numpy as np
 import pandas as pd
 import requests
 
+from concentration_metrics import active_gini, active_top_share
+
 try:
     import comtradeapicall
 except ImportError:  # pragma: no cover - handled at runtime for user clarity
@@ -44,6 +47,7 @@ ROOT = Path(__file__).resolve().parents[1]
 DATA_RAW = ROOT / "data" / "raw"
 COMTRADE_RAW = DATA_RAW / "comtrade"
 COMTRADE_BULK = COMTRADE_RAW / "bulk"
+COMTRADE_H24_WORLD_BULK = COMTRADE_RAW / "h24_world_bulk"
 COMTRADE_AVAILABILITY = COMTRADE_RAW / "availability"
 WORLD_BANK_RAW = DATA_RAW / "world_bank_gdp"
 CLASSIFICATION_RAW = DATA_RAW / "classifications"
@@ -104,6 +108,119 @@ EX10_TOP_METRICS = {
 EX03_RESEARCH_BINS = ["energy", "intermediates", "capital_goods", "final_consumption"]
 EXCLUDED_HS6_CODES = {"999999"}
 EXCLUDED_HS6_LABELS = {"999999": "Commodities not specified"}
+HS_REVISION_SEQUENCE = tuple(f"H{idx}" for idx in range(7))
+HS_REVISION_LABELS = {
+    "H0": "HS1992",
+    "H1": "HS1996",
+    "H2": "HS2002",
+    "H3": "HS2007",
+    "H4": "HS2012",
+    "H5": "HS2017",
+    "H6": "HS2022",
+}
+HS_HARMONIZATION_VERSION = "wco_adjacent_v1_oversized_cap"
+HS_HARMONIZATION_MAX_FAMILY_NODES = int(os.getenv("EX12_HS_HARMONIZATION_MAX_FAMILY_NODES", "100"))
+HS_HARMONIZATION_RAW = CLASSIFICATION_RAW / "hs_revision_correlations"
+HS_HARMONIZATION_MAPPING_PATH = DATA_PROCESSED / "hs6_harmonized_families.csv"
+LT_HGL_DATASET_DOI = "10.7910/DVN/6AADMR"
+LT_HGL_DATASET_URL = f"https://doi.org/{LT_HGL_DATASET_DOI}"
+LT_HGL_DATASET_VERSION = "2.1"
+LT_HGL_TARGET_REVISION = "H0"
+LT_HGL_TARGET_LABEL = "HS1992"
+LT_HGL_WEIGHT_RAW = CLASSIFICATION_RAW / "lt_hgl_weighted_conversion_tables"
+LT_HGL_NORMALIZED_WEIGHTS_PATH = DATA_PROCESSED / "lt_hgl_hs6_to_hs1992_weights.parquet"
+LT_HGL_NORMALIZED_WEIGHTS_CSV = DATA_PROCESSED / "lt_hgl_hs6_to_hs1992_weights.csv"
+LT_HGL_NORMALIZED_WEIGHTS_MANIFEST = DATA_PROCESSED / "lt_hgl_hs6_to_hs1992_weights_manifest.json"
+LT_HGL_WEIGHT_TOLERANCE = float(os.getenv("LT_HGL_WEIGHT_TOLERANCE", "0.000001"))
+LT_HGL_RAW_WEIGHT_TOLERANCE = float(os.getenv("LT_HGL_RAW_WEIGHT_TOLERANCE", "0.05"))
+LT_HGL_HS_BACKWARD_SPECS = (
+    {
+        "source_revision": "H1",
+        "source_label": "HS1996",
+        "target_revision": "H0",
+        "target_label": "HS1992",
+        "filename": "hs96_to_hs92.csv",
+        "dataverse_file_id": 13438071,
+        "md5": "16a9b1ccffff740ecf1e0da9971eecc5",
+    },
+    {
+        "source_revision": "H2",
+        "source_label": "HS2002",
+        "target_revision": "H1",
+        "target_label": "HS1996",
+        "filename": "hs02_to_hs96.csv",
+        "dataverse_file_id": 13438079,
+        "md5": "06fb6a9409a6e772fb0357e260b68a84",
+    },
+    {
+        "source_revision": "H3",
+        "source_label": "HS2007",
+        "target_revision": "H2",
+        "target_label": "HS2002",
+        "filename": "hs07_to_hs02.csv",
+        "dataverse_file_id": 13438068,
+        "md5": "44dae73c38949f685fd3f9ba804ae968",
+    },
+    {
+        "source_revision": "H4",
+        "source_label": "HS2012",
+        "target_revision": "H3",
+        "target_label": "HS2007",
+        "filename": "hs12_to_hs07.csv",
+        "dataverse_file_id": 13438085,
+        "md5": "0e7467593521637db5e1acec15527c5e",
+    },
+    {
+        "source_revision": "H5",
+        "source_label": "HS2017",
+        "target_revision": "H4",
+        "target_label": "HS2012",
+        "filename": "hs17_to_hs12.csv",
+        "dataverse_file_id": 13438081,
+        "md5": "051851b27d6a3e12e620335d4b1cbefa",
+    },
+    {
+        "source_revision": "H6",
+        "source_label": "HS2022",
+        "target_revision": "H5",
+        "target_label": "HS2017",
+        "filename": "hs22_to_hs17.csv",
+        "dataverse_file_id": 13438073,
+        "md5": "18d444928f134b94e5bb9aa30ab3d90b",
+    },
+)
+HS_WCO_CORRELATION_SPECS = (
+    {
+        "source_revision": "H1",
+        "target_revision": "H2",
+        "source_label": "WCO Table II, HS1996 to HS2002",
+        "url": "https://www.wcoomd.org/-/media/wco/public/global/pdf/topics/nomenclature/instruments-and-tools/hs-nomenclature-older-edition/2002/correlations-1996-2002/hs_correlation2002_table2_eng.pdf?la=en",
+    },
+    {
+        "source_revision": "H2",
+        "target_revision": "H3",
+        "source_label": "WCO Table II, HS2002 to HS2007",
+        "url": "https://www.wcoomd.org/-/media/wco/public/global/pdf/topics/nomenclature/instruments-and-tools/hs-nomenclature-older-edition/2007/correlations-2002-2007/hs_correlation2007_table_ii_e_rev4cor.pdf?la=en",
+    },
+    {
+        "source_revision": "H3",
+        "target_revision": "H4",
+        "source_label": "WCO Table II, HS2007 to HS2012",
+        "url": "https://www.wcoomd.org/-/media/wco/public/global/pdf/topics/nomenclature/instruments-and-tools/hs-nomenclature-2012/correlations-2007-2012/ii_trp0712rev3eng_fr.pdf?la=en",
+    },
+    {
+        "source_revision": "H4",
+        "target_revision": "H5",
+        "source_label": "WCO Table II, HS2012 to HS2017",
+        "url": "https://www.wcoomd.org/-/media/wco/public/global/pdf/topics/nomenclature/instruments-and-tools/hs-nomenclature-2017/2016/table_ii_trp1217_en_rev1.pdf?la=en",
+    },
+    {
+        "source_revision": "H5",
+        "target_revision": "H6",
+        "source_label": "WCO Table II, HS2017 to HS2022",
+        "url": "https://www.wcoomd.org/-/media/wco/public/global/pdf/topics/nomenclature/instruments-and-tools/hs-nomenclature-2022/table-ii_en.pdf?la=en",
+    },
+)
 
 DEFAULT_CHUNK_ROWS = int(os.getenv("TRADE_PIPELINE_CHUNK_ROWS", "500000"))
 
@@ -186,7 +303,61 @@ PROF_P_COUNTRIES = [
     Country("United States", "USA", 842),
 ]
 
-COUNTRY_SAMPLE_CHOICES = ("prof_p_33", "world_broad")
+RD2_COUNTRY_ADDITIONS = [
+    Country("Armenia", "ARM", 51),
+    Country("Azerbaijan", "AZE", 31),
+    Country("Botswana", "BWA", 72),
+    Country("Burkina Faso", "BFA", 854),
+    Country("Cambodia", "KHM", 116),
+    Country("China, Hong Kong SAR", "HKG", 344),
+    Country("Costa Rica", "CRI", 188),
+    Country("Croatia", "HRV", 191),
+    Country("Egypt", "EGY", 818),
+    Country("Georgia", "GEO", 268),
+    Country("Guyana", "GUY", 328),
+    Country("Kyrgyzstan", "KGZ", 417),
+    Country("Mauritania", "MRT", 478),
+    Country("Morocco", "MAR", 504),
+    Country("Mozambique", "MOZ", 508),
+    Country("Niger", "NER", 562),
+    Country("North Macedonia", "MKD", 807),
+    Country("Panama", "PAN", 591),
+    Country("Peru", "PER", 604),
+    Country("Rwanda", "RWA", 646),
+    Country("Senegal", "SEN", 686),
+    Country("Singapore", "SGP", 702),
+    Country("Slovenia", "SVN", 705),
+    Country("South Africa", "ZAF", 710),
+    Country("Uganda", "UGA", 800),
+    Country("United Arab Emirates", "ARE", 784),
+    Country("Zimbabwe", "ZWE", 716),
+]
+RD2_COUNTRIES = [*PROF_P_COUNTRIES, *RD2_COUNTRY_ADDITIONS]
+RD2_REQUIRED_ISO3 = {country.iso3 for country in RD2_COUNTRY_ADDITIONS}
+
+PROF_P_SAMPLE = "prof_p_33"
+WORLD_BROAD_SAMPLE = "world_broad"
+RD2_SAMPLE = "rd2_countries"
+CADOT_BROAD_SAMPLE = "cadot_broad_156"
+CADOT_ORIGINAL_SAMPLE = "cadot_original_1988_2006"
+CADOT_ORIGINAL_EXTENDED_SAMPLE = "cadot_original_countries_extended"
+CADOT_BROAD_START_YEAR = 2000
+CADOT_BROAD_END_YEAR = 2024
+CADOT_BROAD_MIN_AVAILABLE_YEARS = 19
+CADOT_BROAD_EXPECTED_REPORTERS = 156
+CADOT_ORIGINAL_START_YEAR = 1988
+CADOT_ORIGINAL_END_YEAR = 2006
+BROAD_COMTRADE_SAMPLE_NAMES = {WORLD_BROAD_SAMPLE, CADOT_BROAD_SAMPLE}
+PUBLIC_ALL_REPORTER_AVAILABILITY_SAMPLE_NAMES = {WORLD_BROAD_SAMPLE, RD2_SAMPLE, CADOT_BROAD_SAMPLE}
+
+COUNTRY_SAMPLE_CHOICES = (
+    PROF_P_SAMPLE,
+    WORLD_BROAD_SAMPLE,
+    RD2_SAMPLE,
+    CADOT_BROAD_SAMPLE,
+    CADOT_ORIGINAL_SAMPLE,
+    CADOT_ORIGINAL_EXTENDED_SAMPLE,
+)
 PIPELINE_EXERCISES = ["1", "2", "3", "4", "6", "10", "11", "12"]
 COMTRADE_REPORTERS_URL = "https://comtradeapi.un.org/files/v1/app/reference/Reporters.json"
 COMTRADE_REPORTERS_PATH = COMTRADE_RAW / "reporters_reference.json"
@@ -279,6 +450,7 @@ def parse_file_size_to_bytes(value: object) -> float:
 def ensure_dirs() -> None:
     for path in [
         COMTRADE_BULK,
+        COMTRADE_H24_WORLD_BULK,
         COMTRADE_AVAILABILITY,
         WORLD_BANK_RAW,
         CLASSIFICATION_RAW,
@@ -437,6 +609,32 @@ def configure_country_sample(
 ) -> CountrySampleSettings:
     if country_sample not in COUNTRY_SAMPLE_CHOICES:
         raise ValueError(f"Unsupported country sample `{country_sample}`. Choose from: {', '.join(COUNTRY_SAMPLE_CHOICES)}")
+    if country_sample == CADOT_BROAD_SAMPLE:
+        if min_available_years not in {10, CADOT_BROAD_MIN_AVAILABLE_YEARS}:
+            raise ValueError(
+                f"{CADOT_BROAD_SAMPLE} fixes --min-available-years at {CADOT_BROAD_MIN_AVAILABLE_YEARS}; "
+                f"received {min_available_years}."
+            )
+        if start_year not in {1988, CADOT_BROAD_START_YEAR}:
+            raise ValueError(f"{CADOT_BROAD_SAMPLE} fixes --start-year at {CADOT_BROAD_START_YEAR}; received {start_year}.")
+        if end_year not in {None, CADOT_BROAD_END_YEAR}:
+            raise ValueError(f"{CADOT_BROAD_SAMPLE} fixes --end-year at {CADOT_BROAD_END_YEAR}; received {end_year}.")
+        min_available_years = CADOT_BROAD_MIN_AVAILABLE_YEARS
+        start_year = CADOT_BROAD_START_YEAR
+        end_year = CADOT_BROAD_END_YEAR
+    if country_sample == CADOT_ORIGINAL_SAMPLE:
+        if start_year not in {1988, CADOT_ORIGINAL_START_YEAR}:
+            raise ValueError(f"{CADOT_ORIGINAL_SAMPLE} fixes --start-year at {CADOT_ORIGINAL_START_YEAR}; received {start_year}.")
+        if end_year not in {None, CADOT_ORIGINAL_END_YEAR}:
+            raise ValueError(f"{CADOT_ORIGINAL_SAMPLE} fixes --end-year at {CADOT_ORIGINAL_END_YEAR}; received {end_year}.")
+        start_year = CADOT_ORIGINAL_START_YEAR
+        end_year = CADOT_ORIGINAL_END_YEAR
+    if country_sample == CADOT_ORIGINAL_EXTENDED_SAMPLE:
+        if start_year not in {1988, CADOT_ORIGINAL_START_YEAR}:
+            raise ValueError(
+                f"{CADOT_ORIGINAL_EXTENDED_SAMPLE} fixes --start-year at {CADOT_ORIGINAL_START_YEAR}; received {start_year}."
+            )
+        start_year = CADOT_ORIGINAL_START_YEAR
     if min_available_years < 1:
         raise ValueError("--min-available-years must be positive.")
     if start_year < 1900:
@@ -567,7 +765,7 @@ What is needed:
 2. Re-run:
 
    ```bash
-   python scripts/trade_concentration_pipeline.py --stage all
+   python scripts/trade_concentration_pipeline.py --country-sample {active_sample_name()} --stage all
    ```
 
 Policy followed:
@@ -665,12 +863,23 @@ def load_reporter_reference(refresh: bool = False) -> tuple[pd.DataFrame, str]:
 def load_public_final_availability(settings: CountrySampleSettings | None = None) -> pd.DataFrame:
     settings = settings or ACTIVE_COUNTRY_SAMPLE
     path = availability_path("public_availability", settings.name)
+    world_path = availability_path("public_availability", "world_broad")
+    if settings.name == CADOT_BROAD_SAMPLE and world_path.exists() and not settings.refresh_availability:
+        availability = pd.read_csv(world_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        availability.to_csv(path, index=False)
+        return availability
     if path.exists() and not settings.refresh_availability:
         return pd.read_csv(path)
+    if settings.name == RD2_SAMPLE and world_path.exists() and not settings.refresh_availability:
+        availability = pd.read_csv(world_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        availability.to_csv(path, index=False)
+        return availability
     if comtradeapicall is None:
         return pd.DataFrame()
 
-    if settings.name == "world_broad":
+    if settings.name in PUBLIC_ALL_REPORTER_AVAILABILITY_SAMPLE_NAMES:
         print("Checking public Comtrade annual HS final-data availability for all reporters", flush=True)
         df = comtradeapicall._getFinalDataAvailability(typeCode="C", freqCode="A", clCode="HS", period=None, reporterCode=None)
         availability = df.copy() if df is not None else pd.DataFrame()
@@ -793,9 +1002,40 @@ def write_country_sample_outputs(
     coverage_summary.to_csv(out_dir / "country_coverage_summary.csv", index=False)
     excluded.to_csv(out_dir / "excluded_reporters.csv", index=False)
     write_json(out_dir / "availability_manifest.json", manifest)
-    panel.to_csv(DATA_PROCESSED / "comtrade_country_panel.csv", index=False)
+    if settings.name == CADOT_BROAD_SAMPLE:
+        write_cadot_broad_sample_note(out_dir, coverage_summary, excluded, manifest)
     if settings.name == "prof_p_33":
+        panel.to_csv(DATA_PROCESSED / "comtrade_country_panel.csv", index=False)
         panel.to_csv(DATA_PROCESSED / "prof_p_country_panel.csv", index=False)
+
+
+def write_cadot_broad_sample_note(out_dir: Path, coverage_summary: pd.DataFrame, excluded: pd.DataFrame, manifest: dict) -> None:
+    reason_counts = excluded["exclusion_reason"].value_counts().sort_index().to_dict() if "exclusion_reason" in excluded.columns else {}
+    selected = int(manifest.get("selected_reporters", 0))
+    min_years = int(manifest.get("min_available_years", CADOT_BROAD_MIN_AVAILABLE_YEARS))
+    start_year = int(manifest.get("start_year", CADOT_BROAD_START_YEAR))
+    end_year = int(manifest.get("end_year", CADOT_BROAD_END_YEAR))
+    complete_25 = int((pd.to_numeric(coverage_summary["available_hs_years"], errors="coerce") >= (end_year - start_year + 1)).sum())
+    lines = [
+        "# Cadot Broad 156-Country Sample Diagnostics",
+        "",
+        f"- Sample: `{CADOT_BROAD_SAMPLE}`.",
+        f"- Rule: active non-group Comtrade reporters with valid ISO3 metadata, no expiry flag, and at least {min_years} annual HS final-data years in {start_year}-{end_year}.",
+        f"- Selected reporters: {selected} / expected {CADOT_BROAD_EXPECTED_REPORTERS}.",
+        f"- Reporter reference rows: {manifest.get('reporter_reference_rows', 'n/a')}.",
+        f"- Availability rows in window: {manifest.get('hs_availability_rows_in_window', 'n/a')}.",
+        f"- Selected reporters with complete {end_year - start_year + 1}-year HS coverage: {complete_25}.",
+        f"- Excluded reporters by reason: {reason_counts}.",
+        "",
+        "Companion files:",
+        "",
+        "- `comtrade_country_panel.csv`: selected reporter panel.",
+        "- `country_coverage_summary.csv`: selected reporter HS-year coverage.",
+        "- `country_year_coverage.csv`: selected reporter-year-classification coverage.",
+        "- `excluded_reporters.csv`: reporter-level exclusion reasons.",
+        "- `availability_manifest.json`: machine-readable sample manifest.",
+    ]
+    (out_dir / "sample_diagnostics.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def prof_p_country_sample(settings: CountrySampleSettings) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
@@ -822,6 +1062,58 @@ def prof_p_country_sample(settings: CountrySampleSettings) -> tuple[pd.DataFrame
         "min_available_years": settings.min_available_years,
     }
     return panel, coverage, excluded, manifest
+
+
+def rd2_country_sample(settings: CountrySampleSettings) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
+    panel = pd.DataFrame([c.__dict__ for c in RD2_COUNTRIES])
+    duplicate_codes = panel[panel.duplicated("reporter_code", keep=False)]
+    if not duplicate_codes.empty:
+        raise RuntimeError(f"rd2_countries has duplicate reporter codes: {duplicate_codes.to_dict('records')}")
+    duplicate_iso3 = panel[panel.duplicated("iso3", keep=False)]
+    if not duplicate_iso3.empty:
+        raise RuntimeError(f"rd2_countries has duplicate ISO3 codes: {duplicate_iso3.to_dict('records')}")
+    if len(panel) != 60:
+        raise RuntimeError(f"rd2_countries must contain exactly 60 reporters; found {len(panel)}.")
+    missing_additions = RD2_REQUIRED_ISO3 - set(panel["iso3"])
+    if missing_additions:
+        raise RuntimeError(f"rd2_countries is missing required additions: {sorted(missing_additions)}")
+
+    availability_file = availability_path("public_availability", settings.name)
+    availability = (
+        load_public_final_availability(settings)
+        if settings.refresh_availability or availability_file.exists() or availability_path("public_availability", "world_broad").exists()
+        else pd.DataFrame()
+    )
+    coverage, coverage_summary = build_country_year_coverage(panel, availability, settings)
+    excluded = pd.DataFrame(columns=["country", "iso3", "reporter_code", "exclusion_reason"])
+    botswana = coverage_summary[coverage_summary["iso3"].eq("BWA")]
+    botswana_years = int(botswana["available_hs_years"].iloc[0]) if not botswana.empty else 0
+    manifest = {
+        "created_at_utc": now_utc(),
+        "country_sample": settings.name,
+        "sample_rule": "Fixed 60-country rd2 sample: Panagariya-Bagaria 33 plus researcher-selected fast-growing, hub, and small-country additions.",
+        "selected_reporters": int(len(panel)),
+        "original_prof_p_reporters": int(len(PROF_P_COUNTRIES)),
+        "additional_reporters": int(len(RD2_COUNTRY_ADDITIONS)),
+        "required_addition_iso3": sorted(RD2_REQUIRED_ISO3),
+        "explicit_coverage_overrides": [
+            {
+                "country": "Botswana",
+                "iso3": "BWA",
+                "reporter_code": 72,
+                "available_hs_years": botswana_years,
+                "reason": "Included by researcher request despite falling below the 25-year screening rule.",
+            }
+        ],
+        "availability_rows": int(len(availability)),
+        "reporter_reference_url": COMTRADE_REPORTERS_URL,
+        "availability_file": str(availability_file.relative_to(ROOT)) if availability_file.exists() else "",
+        "api_params": {"typeCode": "C", "freqCode": "A", "clCode": "HS"},
+        "start_year": settings.start_year,
+        "end_year": settings.end_year,
+        "min_available_years": settings.min_available_years,
+    }
+    return panel.sort_values(["country", "reporter_code"]).reset_index(drop=True), coverage, excluded, manifest
 
 
 def world_broad_country_sample(settings: CountrySampleSettings) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, dict]:
@@ -887,12 +1179,36 @@ def world_broad_country_sample(settings: CountrySampleSettings) -> tuple[pd.Data
         ["country", "iso3", "reporter_code", "exclusion_reason", "available_hs_years", "first_available_year", "last_available_year"]
     ].sort_values(["exclusion_reason", "country", "reporter_code"])
 
+    if settings.name == CADOT_BROAD_SAMPLE:
+        duplicate_codes = panel[panel.duplicated("reporter_code", keep=False)]
+        if not duplicate_codes.empty:
+            raise RuntimeError(f"{CADOT_BROAD_SAMPLE} has duplicate reporter codes: {duplicate_codes.to_dict('records')}")
+        duplicate_iso3 = panel[panel.duplicated("iso3", keep=False)]
+        if not duplicate_iso3.empty:
+            raise RuntimeError(f"{CADOT_BROAD_SAMPLE} has duplicate ISO3 codes: {duplicate_iso3.to_dict('records')}")
+        if len(panel) != CADOT_BROAD_EXPECTED_REPORTERS:
+            reason_counts = excluded["exclusion_reason"].value_counts().sort_index().to_dict()
+            raise RuntimeError(
+                f"{CADOT_BROAD_SAMPLE} must select exactly {CADOT_BROAD_EXPECTED_REPORTERS} reporters under the "
+                f"fixed {settings.start_year}-{settings.end_year}, min-HS-years={settings.min_available_years} rule; "
+                f"found {len(panel)}. Exclusion counts: {reason_counts}"
+            )
+
+    reason_counts = ref["exclusion_reason"].replace("", "selected").value_counts().sort_index().to_dict()
+    sample_rule = (
+        "Cadot broad 156-country modern replication sample: active non-group Comtrade reporters with ISO3 metadata, "
+        "no expiry flag, and at least 19 annual final merchandise HS availability years in 2000-2024."
+        if settings.name == CADOT_BROAD_SAMPLE
+        else "Active non-group Comtrade reporters with ISO3 metadata and enough annual final merchandise HS availability."
+    )
     manifest = {
         "created_at_utc": now_utc(),
         "country_sample": settings.name,
-        "sample_rule": "Active non-group Comtrade reporters with ISO3 metadata and enough annual final merchandise HS availability.",
+        "sample_rule": sample_rule,
         "selected_reporters": int(len(panel)),
         "excluded_reporters": int(len(excluded)),
+        "reporter_reference_rows": int(len(ref)),
+        "reporter_exclusion_counts": {str(key): int(value) for key, value in reason_counts.items()},
         "availability_rows": int(len(availability)),
         "hs_availability_rows_in_window": int(len(hs)),
         "reporter_reference_url": COMTRADE_REPORTERS_URL,
@@ -904,6 +1220,9 @@ def world_broad_country_sample(settings: CountrySampleSettings) -> tuple[pd.Data
         "end_year": settings.end_year,
         "min_available_years": settings.min_available_years,
     }
+    if settings.name == CADOT_BROAD_SAMPLE:
+        manifest["expected_selected_reporters"] = CADOT_BROAD_EXPECTED_REPORTERS
+        manifest["sample_role"] = "Cadot-comparable broad replication sample, not website-facing."
     return panel, coverage, excluded, manifest
 
 
@@ -912,8 +1231,17 @@ def build_country_sample(settings: CountrySampleSettings | None = None) -> tuple
     cached = _COUNTRY_SAMPLE_CACHE.get(settings)
     if cached is not None:
         return cached
+    if settings.name in {CADOT_ORIGINAL_SAMPLE, CADOT_ORIGINAL_EXTENDED_SAMPLE}:
+        raise RuntimeError(
+            f"{settings.name} is a research-only Cadot replication target, but the exact Cadot 156-country list, "
+            "mirror-import construction, and HS0 4,991-line universe have not been recovered in this checkout. "
+            "Run `python3 scripts/recover_cadot_original_status.py` to write current blocker/status artifacts; "
+            "do not use the broad Comtrade selector for this sample."
+        )
     if settings.name == "prof_p_33":
         panel, coverage, excluded, manifest = prof_p_country_sample(settings)
+    elif settings.name == "rd2_countries":
+        panel, coverage, excluded, manifest = rd2_country_sample(settings)
     else:
         panel, coverage, excluded, manifest = world_broad_country_sample(settings)
     coverage_summary = summarize_country_coverage(panel, coverage)
@@ -1100,6 +1428,11 @@ def download_one_bulk_file(row: dict, subscription_key: str, retries: int = 3) -
     return {"filename": filename, "status": "failed", "error": last_error}
 
 
+def availability_bulk_key(row: pd.Series) -> tuple[int, int, str]:
+    reporter = row.get("reporter_code_expected", row.get("reporterCode"))
+    return (int(reporter), int(row.get("period")), str(row.get("classificationCode")).strip().upper())
+
+
 def download_bulk_files(
     subscription_key: str,
     availability: pd.DataFrame,
@@ -1130,6 +1463,11 @@ def download_bulk_files(
     if max_file_mb is not None:
         available = available[available["file_size_bytes_sort"] <= max_file_mb * 1_000_000].copy()
     available = available.sort_values(["file_size_bytes_sort"], ascending=True)
+    existing_keys = available_bulk_keys(dedupe_bulk_files(raw_bulk_file_candidates()))
+    available = available[~available.apply(availability_bulk_key, axis=1).isin(existing_keys)].copy()
+    if available.empty:
+        print("All selected HS bulk files are already present in local raw stores.", flush=True)
+        return
 
     jobs = available.to_dict("records")
     print(f"Downloading/checking {len(jobs)} HS bulk files with {workers} workers", flush=True)
@@ -1224,18 +1562,31 @@ def apply_memory_limit(memory_limit_gb: float | None) -> None:
         except (OSError, ValueError) as exc:
             print(f"WARNING: OS memory limit was not accepted ({exc}); using RSS monitor fallback.", flush=True)
 
-    try:
-        import threading
-        import psutil
-    except ImportError:
-        print("WARNING: psutil is unavailable; memory monitor fallback was not applied.", flush=True)
-        return
+    import threading
 
-    process = psutil.Process(os.getpid())
+    try:
+        import psutil
+
+        process = psutil.Process(os.getpid())
+
+        def current_rss_bytes() -> int:
+            return int(process.memory_info().rss)
+
+        monitor_source = "psutil"
+    except ImportError:
+
+        def current_rss_bytes() -> int:
+            try:
+                output = subprocess.check_output(["ps", "-o", "rss=", "-p", str(os.getpid())], text=True)
+                return int(output.strip().split()[0]) * 1024
+            except Exception:
+                return 0
+
+        monitor_source = "ps"
 
     def monitor() -> None:
         while True:
-            rss = process.memory_info().rss
+            rss = current_rss_bytes()
             if rss > requested:
                 print(
                     f"ERROR: RSS memory cap exceeded ({rss / 1024**3:.1f} GB > {requested / 1024**3:.1f} GB).",
@@ -1247,7 +1598,116 @@ def apply_memory_limit(memory_limit_gb: float | None) -> None:
 
     thread = threading.Thread(target=monitor, name="memory-cap-monitor", daemon=True)
     thread.start()
-    print(f"Applied RSS memory monitor cap: {requested / 1024**3:.1f} GB", flush=True)
+    print(f"Applied RSS memory monitor cap via {monitor_source}: {requested / 1024**3:.1f} GB", flush=True)
+
+
+def macos_memory_snapshot() -> dict[str, int]:
+    snapshot = {
+        "total_bytes": 0,
+        "available_bytes": 0,
+        "raw_available_bytes": 0,
+        "file_backed_bytes": 0,
+        "used_rss_bytes": 0,
+        "compressed_bytes": 0,
+        "memory_pressure_free_pct": -1,
+    }
+    try:
+        snapshot["total_bytes"] = int(subprocess.check_output(["sysctl", "-n", "hw.memsize"], text=True).strip())
+    except Exception:
+        pass
+    try:
+        vm_output = subprocess.check_output(["vm_stat"], text=True)
+        page_size_match = re.search(r"page size of (\d+) bytes", vm_output)
+        page_size = int(page_size_match.group(1)) if page_size_match else 4096
+        pages: dict[str, int] = {}
+        for line in vm_output.splitlines():
+            match = re.match(r"(?:Pages )?([^:]+):\s+(\d+)\.", line.strip())
+            if match:
+                pages[match.group(1).strip().lower()] = int(match.group(2))
+        free_pages = pages.get("free", 0) + pages.get("speculative", 0) + pages.get("purgeable", 0)
+        file_backed_pages = pages.get("file-backed pages", pages.get("file-backed", 0))
+        snapshot["raw_available_bytes"] = free_pages * page_size
+        snapshot["file_backed_bytes"] = file_backed_pages * page_size
+        snapshot["available_bytes"] = (free_pages + file_backed_pages) * page_size
+        snapshot["compressed_bytes"] = pages.get("occupied by compressor", 0) * page_size
+    except Exception:
+        pass
+    try:
+        pressure_output = subprocess.check_output(["memory_pressure", "-Q"], text=True, stderr=subprocess.DEVNULL)
+        pct_match = re.search(r"free percentage:\s+(\d+)%", pressure_output)
+        if pct_match:
+            snapshot["memory_pressure_free_pct"] = int(pct_match.group(1))
+    except Exception:
+        pass
+    try:
+        ps_output = subprocess.check_output(["ps", "-axo", "rss="], text=True)
+        snapshot["used_rss_bytes"] = sum(int(value) for value in ps_output.split() if value.strip().isdigit()) * 1024
+    except Exception:
+        pass
+    return snapshot
+
+
+def apply_dynamic_memory_guard(
+    reserve_gb: float | None = None,
+    max_process_gb: float | None = None,
+    poll_seconds: float = 2.0,
+) -> None:
+    if reserve_gb is None and max_process_gb is None:
+        return
+    if reserve_gb is not None and reserve_gb <= 0:
+        raise RuntimeError("--memory-reserve-gb must be positive.")
+    if max_process_gb is not None and max_process_gb <= 0:
+        raise RuntimeError("--memory-limit-gb must be positive.")
+
+    import threading
+
+    reserve_bytes = int((reserve_gb or 0) * 1024**3)
+    max_process_bytes = int(max_process_gb * 1024**3) if max_process_gb is not None else None
+
+    def current_rss_bytes() -> int:
+        try:
+            output = subprocess.check_output(["ps", "-o", "rss=", "-p", str(os.getpid())], text=True)
+            return int(output.strip().split()[0]) * 1024
+        except Exception:
+            return 0
+
+    def monitor() -> None:
+        while True:
+            rss = current_rss_bytes()
+            snapshot = macos_memory_snapshot()
+            available = snapshot.get("available_bytes", 0)
+            pressure_free_pct = snapshot.get("memory_pressure_free_pct", -1)
+            if max_process_bytes is not None and rss > max_process_bytes:
+                print(
+                    f"ERROR: process RSS cap exceeded ({rss / 1024**3:.1f} GB > {max_process_bytes / 1024**3:.1f} GB).",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                os._exit(137)
+            if reserve_bytes and available and available < reserve_bytes and (pressure_free_pct < 0 or pressure_free_pct < 10):
+                print(
+                    "ERROR: system memory reserve breached "
+                    f"(available={available / 1024**3:.1f} GB < reserve={reserve_bytes / 1024**3:.1f} GB; "
+                    f"process_rss={rss / 1024**3:.1f} GB; pressure_free_pct={pressure_free_pct}).",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                os._exit(137)
+            time.sleep(max(0.5, poll_seconds))
+
+    initial = macos_memory_snapshot()
+    thread = threading.Thread(target=monitor, name="dynamic-memory-guard", daemon=True)
+    thread.start()
+    print(
+        "Applied dynamic memory guard: "
+        f"reserve={reserve_bytes / 1024**3:.1f} GB, "
+        f"process_cap={(max_process_bytes / 1024**3 if max_process_bytes else 0):.1f} GB, "
+        f"initial_available={initial.get('available_bytes', 0) / 1024**3:.1f} GB, "
+        f"initial_raw_available={initial.get('raw_available_bytes', 0) / 1024**3:.1f} GB, "
+        f"initial_pressure_free_pct={initial.get('memory_pressure_free_pct', -1)}, "
+        f"initial_total={initial.get('total_bytes', 0) / 1024**3:.1f} GB",
+        flush=True,
+    )
 
 
 def detect_comtrade_delimiter(path: Path) -> str:
@@ -1432,7 +1892,6 @@ def extract_leaf_trade(df: pd.DataFrame) -> pd.DataFrame:
         out["is_aggregate"] = pd.to_numeric(df.loc[out.index, "isaggregate"], errors="coerce").fillna(0).astype(int)
         out = out[out["is_aggregate"] == 0].copy()
     out = out[out["cmd_code"].str.match(r"^\d{6}$", na=False)].copy()
-    out = drop_excluded_hs6(out)
     out["hs2"] = out["cmd_code"].str[:2]
     out = out[out["partner_code"] != 0]
     out = out[out["flow"].isin(["Exports", "Imports"])]
@@ -1447,33 +1906,13 @@ def iter_leaf_trade_chunks(path: Path, chunk_rows: int = DEFAULT_CHUNK_ROWS) -> 
 
 
 def gini(values: Iterable[float]) -> float:
-    arr = np.asarray(list(values), dtype=float)
-    arr = arr[np.isfinite(arr) & (arr > 0)]
-    if arr.size == 0:
-        return np.nan
-    arr.sort()
-    n = arr.size
-    total = arr.sum()
-    if total <= 0:
-        return np.nan
-    idx = np.arange(1, n + 1)
-    return float((2 * np.sum(idx * arr) / (n * total)) - ((n + 1) / n))
+    """Backward-compatible alias for active-positive Gini."""
+    return active_gini(values)
 
 
 def top_share(values: Iterable[float], n: int | None = None, pct: float | None = None) -> float:
-    arr = np.asarray(list(values), dtype=float)
-    arr = arr[np.isfinite(arr) & (arr > 0)]
-    if arr.size == 0:
-        return np.nan
-    arr.sort()
-    arr = arr[::-1]
-    if pct is not None:
-        k = max(1, int(math.ceil(arr.size * pct)))
-    elif n is not None:
-        k = min(n, arr.size)
-    else:
-        raise ValueError("Need n or pct.")
-    return float(arr[:k].sum() / arr.sum())
+    """Backward-compatible alias for active-positive top shares."""
+    return active_top_share(values, n=n, pct=pct)
 
 
 def metric_row(values: pd.Series, prefix: str) -> dict:
@@ -1490,7 +1929,8 @@ def metric_row(values: pd.Series, prefix: str) -> dict:
 
 
 def compute_concentration(leaf: pd.DataFrame, variant: str = "baseline") -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
-    leaf = drop_excluded_hs6(leaf)
+    partner_leaf = leaf.copy()
+    product_leaf = drop_excluded_hs6(leaf)
     product_rows = []
     partner_rows = []
     cell_rows = []
@@ -1498,7 +1938,7 @@ def compute_concentration(leaf: pd.DataFrame, variant: str = "baseline") -> tupl
     country_meta = panel.set_index("reporter_code")[["country", "iso3"]].to_dict("index")
 
     group_cols = ["reporter_code", "year", "flow"]
-    for key, group in leaf.groupby(group_cols, sort=True):
+    for key, group in product_leaf.groupby(group_cols, sort=True):
         reporter_code, year, flow = key
         meta = country_meta.get(int(reporter_code), {"country": str(reporter_code), "iso3": ""})
         base = {
@@ -1511,12 +1951,25 @@ def compute_concentration(leaf: pd.DataFrame, variant: str = "baseline") -> tupl
             "total_trade_value": float(group["trade_value"].sum()),
         }
         product_values = group.groupby("cmd_code", as_index=False)["trade_value"].sum()
-        partner_values = group.groupby("partner_code", as_index=False)["trade_value"].sum()
         cell_values = group.groupby(["cmd_code", "partner_code"], as_index=False)["trade_value"].sum()
 
         product_rows.append({**base, **metric_row(product_values["trade_value"], "product")})
-        partner_rows.append({**base, **metric_row(partner_values["trade_value"], "partner"), "top_5_partner_share": top_share(partner_values["trade_value"], n=5)})
         cell_rows.append({**base, **metric_row(cell_values["trade_value"], "product_partner_cell")})
+
+    for key, group in partner_leaf.groupby(group_cols, sort=True):
+        reporter_code, year, flow = key
+        meta = country_meta.get(int(reporter_code), {"country": str(reporter_code), "iso3": ""})
+        base = {
+            "country": meta["country"],
+            "iso3": meta["iso3"],
+            "reporter_code": int(reporter_code),
+            "year": int(year),
+            "flow": flow,
+            "variant": variant,
+            "total_trade_value": float(group["trade_value"].sum()),
+        }
+        partner_values = group.groupby("partner_code", as_index=False)["trade_value"].sum()
+        partner_rows.append({**base, **metric_row(partner_values["trade_value"], "partner"), "top_5_partner_share": top_share(partner_values["trade_value"], n=5)})
 
     return pd.DataFrame(product_rows), pd.DataFrame(partner_rows), pd.DataFrame(cell_rows)
 
@@ -1552,8 +2005,79 @@ def bulk_file_metadata(path: Path) -> dict | None:
     }
 
 
+def raw_bulk_file_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    for directory in [COMTRADE_BULK, COMTRADE_H24_WORLD_BULK]:
+        candidates.extend(sorted(directory.glob("COMTRADE-FINAL-*H*.gz")))
+        candidates.extend(sorted(directory.glob("COMTRADE-FINAL-*H*.txt")))
+    return candidates
+
+
+def bulk_file_publication_key(path: Path) -> str:
+    match = re.search(r"\[(\d{4}-\d{2}-\d{2})\]", path.name)
+    return match.group(1) if match else "0000-00-00"
+
+
+def bulk_file_is_preferred(candidate: Path, incumbent: Path) -> bool:
+    candidate_is_canonical = candidate.parent.resolve() == COMTRADE_BULK.resolve()
+    incumbent_is_canonical = incumbent.parent.resolve() == COMTRADE_BULK.resolve()
+    if candidate_is_canonical != incumbent_is_canonical:
+        return candidate_is_canonical
+    return bulk_file_publication_key(candidate) > bulk_file_publication_key(incumbent)
+
+
+def dedupe_bulk_files(files: Iterable[Path]) -> list[Path]:
+    selected: dict[tuple[int, int, str], Path] = {}
+    for path in files:
+        metadata = bulk_file_metadata(path)
+        if metadata is None:
+            continue
+        key = (int(metadata["reporter_code"]), int(metadata["year"]), str(metadata["classification_code"]))
+        incumbent = selected.get(key)
+        if incumbent is None or bulk_file_is_preferred(path, incumbent):
+            selected[key] = path
+    return sorted(
+        selected.values(),
+        key=lambda path: (
+            int(bulk_file_metadata(path)["reporter_code"]),  # type: ignore[index]
+            int(bulk_file_metadata(path)["year"]),  # type: ignore[index]
+            str(bulk_file_metadata(path)["classification_code"]),  # type: ignore[index]
+            path.name,
+        ),
+    )
+
+
+def expected_bulk_keys_for_active_sample() -> set[tuple[int, int, str]]:
+    _panel, coverage, _excluded, _manifest = build_country_sample(ACTIVE_COUNTRY_SAMPLE)
+    if coverage.empty:
+        return set()
+    return {
+        (int(row.reporter_code), int(row.year), str(row.classification_code).strip().upper())
+        for row in coverage.itertuples(index=False)
+        if str(row.classification_code).strip()
+    }
+
+
+def available_bulk_keys(files: Iterable[Path]) -> set[tuple[int, int, str]]:
+    keys: set[tuple[int, int, str]] = set()
+    for path in files:
+        metadata = bulk_file_metadata(path)
+        if metadata is None:
+            continue
+        keys.add((int(metadata["reporter_code"]), int(metadata["year"]), str(metadata["classification_code"]).strip().upper()))
+    return keys
+
+
+def missing_bulk_keys_for_active_sample(files: Iterable[Path] | None = None) -> set[tuple[int, int, str]]:
+    expected = expected_bulk_keys_for_active_sample()
+    if not expected:
+        return set()
+    files = list(files) if files is not None else dedupe_bulk_files(raw_bulk_file_candidates())
+    return expected - available_bulk_keys(files)
+
+
 def hs_bulk_files(max_files: int | None = None) -> list[Path]:
-    files = sorted(COMTRADE_BULK.glob("COMTRADE-FINAL-*H*.gz")) + sorted(COMTRADE_BULK.glob("COMTRADE-FINAL-*H*.txt"))
+    files = dedupe_bulk_files(raw_bulk_file_candidates())
     panel, coverage, _excluded, _manifest = build_country_sample(ACTIVE_COUNTRY_SAMPLE)
     reporter_codes = set(panel["reporter_code"].astype(int))
     allowed_pairs = None
@@ -1656,6 +2180,7 @@ def add_group_sum_frame(
     group_cols: list[str],
     value_col: str = "trade_value",
     compact_rows: int = 500_000,
+    exclude_hs6: bool = True,
 ) -> pd.DataFrame | None:
     columns = [*group_cols, value_col]
     if frame.empty:
@@ -1664,7 +2189,8 @@ def add_group_sum_frame(
     if missing:
         raise RuntimeError(f"Aggregate frame is missing required columns: {sorted(missing)}")
     frame = frame[columns].copy()
-    frame = drop_excluded_hs6(frame)
+    if exclude_hs6:
+        frame = drop_excluded_hs6(frame)
     frame[value_col] = pd.to_numeric(frame[value_col], errors="coerce")
     frame = frame.dropna(subset=[value_col])
     frame = frame[frame[value_col] > 0].copy()
@@ -1682,11 +2208,13 @@ def finish_group_sum_frame(
     combined: pd.DataFrame | None,
     group_cols: list[str],
     value_col: str = "trade_value",
+    exclude_hs6: bool = True,
 ) -> pd.DataFrame:
     columns = [*group_cols, value_col]
     if combined is None or combined.empty:
         return pd.DataFrame(columns=columns)
-    combined = drop_excluded_hs6(combined)
+    if exclude_hs6:
+        combined = drop_excluded_hs6(combined)
     if combined.empty:
         return pd.DataFrame(columns=columns)
     return combined.groupby(group_cols, as_index=False)[value_col].sum()
@@ -1695,8 +2223,9 @@ def finish_group_sum_frame(
 def merge_metric_tables(product: pd.DataFrame, partner: pd.DataFrame, cell: pd.DataFrame) -> pd.DataFrame:
     if product.empty:
         return pd.DataFrame()
+    partner_for_merge = partner.rename(columns={"total_trade_value": "partner_total_trade_value"})
     return product.merge(
-        partner.drop(columns=["total_trade_value"], errors="ignore"),
+        partner_for_merge,
         on=["country", "iso3", "reporter_code", "year", "flow", "variant"],
         how="outer",
     ).merge(
@@ -1707,10 +2236,10 @@ def merge_metric_tables(product: pd.DataFrame, partner: pd.DataFrame, cell: pd.D
 
 
 def compute_exercise_06_outputs_for_leaf(leaf: pd.DataFrame, panel: pd.DataFrame) -> tuple[list[pd.DataFrame], list[pd.DataFrame]]:
-    leaf = drop_excluded_hs6(leaf)
     outputs = []
     removal_rows = []
-    base_totals = leaf.groupby(["reporter_code", "year", "flow"], as_index=False)["trade_value"].sum().rename(
+    product_leaf = drop_excluded_hs6(leaf)
+    base_totals = product_leaf.groupby(["reporter_code", "year", "flow"], as_index=False)["trade_value"].sum().rename(
         columns={"trade_value": "baseline_total_trade_value"}
     )
 
@@ -1724,7 +2253,7 @@ def compute_exercise_06_outputs_for_leaf(leaf: pd.DataFrame, panel: pd.DataFrame
         combined["trade_share_removed"] = 1 - (combined["total_trade_value"] / combined["baseline_total_trade_value"])
         outputs.append(combined)
 
-    category_values = leaf[leaf["hs2"].isin(EXCLUSION_LABELS)].copy()
+    category_values = product_leaf[product_leaf["hs2"].isin(EXCLUSION_LABELS)].copy()
     if not category_values.empty:
         category_values["exclusion_category"] = category_values["hs2"].map(EXCLUSION_LABELS)
         cat = category_values.groupby(
@@ -2327,12 +2856,12 @@ def aggregate_exercises_03_04_for_raw(
             coverage_products = add_group_sum_frame(coverage_products, chunk_coverage, ex03_coverage_cols)
         if include_exercise_04:
             chunk_supplier = standardize_exercise_04_supplier_values(exercise_04_supplier_values_for_leaf(leaf))
-            supplier_values = add_group_sum_frame(supplier_values, chunk_supplier, ex04_supplier_cols)
+            supplier_values = add_group_sum_frame(supplier_values, chunk_supplier, ex04_supplier_cols, exclude_hs6=False)
         del leaf
 
     product_out = standardize_exercise_03_product_values(finish_group_sum_frame(product_values, ex03_product_cols))
     coverage_out = standardize_exercise_03_coverage_products(finish_group_sum_frame(coverage_products, ex03_coverage_cols))
-    supplier_out = standardize_exercise_04_supplier_values(finish_group_sum_frame(supplier_values, ex04_supplier_cols))
+    supplier_out = standardize_exercise_04_supplier_values(finish_group_sum_frame(supplier_values, ex04_supplier_cols, exclude_hs6=False))
     return product_out, coverage_out, supplier_out
 
 
@@ -2707,6 +3236,9 @@ def weighted_mean(values: pd.Series, weights: pd.Series) -> float:
 def exercise_04_product_metrics_from_supplier_values(supplier_values: pd.DataFrame, partner_ref: pd.DataFrame | None = None) -> pd.DataFrame:
     if supplier_values.empty:
         return pd.DataFrame()
+    supplier_values = drop_excluded_hs6(supplier_values)
+    if supplier_values.empty:
+        return pd.DataFrame()
     supplier_values = supplier_values.groupby(["reporter_code", "year", "cmd_code", "partner_code"], as_index=False)["trade_value"].sum()
     keys = ["reporter_code", "year", "cmd_code"]
     totals = supplier_values.groupby(keys, as_index=False)["trade_value"].sum().rename(columns={"trade_value": "total_product_imports"})
@@ -2804,7 +3336,6 @@ def standardize_exercise_04_supplier_values(df: pd.DataFrame) -> pd.DataFrame:
     out["trade_value"] = pd.to_numeric(out["trade_value"], errors="coerce")
     out = out.dropna(subset=["reporter_code", "year", "cmd_code", "partner_code", "trade_value"])
     out = out[out["trade_value"] > 0].copy()
-    out = drop_excluded_hs6(out)
     if out.empty:
         return pd.DataFrame(columns=cols)
     out["reporter_code"] = out["reporter_code"].astype(int)
@@ -4039,15 +4570,7 @@ def run_exercise_01(leaf: pd.DataFrame) -> pd.DataFrame:
     partner.to_csv(EX01_TABLES / "partner_concentration_all_years.csv", index=False)
     cell.to_csv(EX01_TABLES / "product_partner_cell_concentration_all_years.csv", index=False)
 
-    combined = product.merge(
-        partner.drop(columns=["total_trade_value"]),
-        on=["country", "iso3", "reporter_code", "year", "flow", "variant"],
-        how="outer",
-    ).merge(
-        cell.drop(columns=["total_trade_value"]),
-        on=["country", "iso3", "reporter_code", "year", "flow", "variant"],
-        how="outer",
-    )
+    combined = merge_metric_tables(product, partner, cell)
     combined.to_parquet(sample_processed_path("concentration_all_years.parquet"), index=False)
     combined.to_csv(EX01_TABLES / "concentration_all_years.csv", index=False)
     make_exercise_01_figures(combined)
@@ -4197,11 +4720,26 @@ Does the aggregate puzzle still look real across years, or does it look driven b
 def fetch_world_bank_indicator(iso3s: list[str], indicator: str, value_name: str, start: int, end: int) -> pd.DataFrame:
     cache_name = re.sub(r"[^A-Za-z0-9]+", "_", indicator).strip("_").lower()
     cache_path = WORLD_BANK_RAW / f"{cache_name}_{start}_{end}.csv"
+    columns = ["iso3", "year", value_name]
+    requested = sorted({str(iso3).strip().upper() for iso3 in iso3s if str(iso3).strip()})
+    cached = pd.DataFrame(columns=columns)
     if cache_path.exists():
-        return pd.read_csv(cache_path)
+        cached = pd.read_csv(cache_path)
+        if set(columns).issubset(cached.columns):
+            cached = cached[columns].copy()
+            cached["iso3"] = cached["iso3"].astype(str).str.strip().str.upper()
+            cached["year"] = pd.to_numeric(cached["year"], errors="coerce")
+            cached[value_name] = pd.to_numeric(cached[value_name], errors="coerce")
+            cached = cached.dropna(subset=["iso3", "year"]).copy()
+            cached["year"] = cached["year"].astype(int)
+            cached = cached[cached["iso3"].isin(requested) & cached["year"].between(start, end)]
+        else:
+            cached = pd.DataFrame(columns=columns)
 
     rows = []
-    for iso3 in sorted(set(iso3s)):
+    cached_iso3s = set(cached.loc[cached[value_name].notna(), "iso3"])
+    fetch_iso3s = requested if cached.empty else sorted(set(requested) - cached_iso3s)
+    for iso3 in fetch_iso3s:
         url = f"https://api.worldbank.org/v2/country/{iso3}/indicator/{indicator}"
         params = {"format": "json", "per_page": 20000, "date": f"{start}:{end}"}
         try:
@@ -4218,48 +4756,89 @@ def fetch_world_bank_indicator(iso3s: list[str], indicator: str, value_name: str
         except Exception:
             continue
 
-    out = pd.DataFrame(rows)
+    fresh = pd.DataFrame(rows, columns=columns)
+    pieces = [piece for piece in (cached, fresh) if not piece.empty]
+    out = pd.concat(pieces, ignore_index=True) if pieces else pd.DataFrame(columns=columns)
     if not out.empty:
+        out["iso3"] = out["iso3"].astype(str).str.strip().str.upper()
+        out["year"] = pd.to_numeric(out["year"], errors="coerce")
+        out[value_name] = pd.to_numeric(out[value_name], errors="coerce")
+        out = out.dropna(subset=["iso3", "year"]).copy()
+        out["year"] = out["year"].astype(int)
+        out = (
+            out[out["iso3"].isin(requested) & out["year"].between(start, end)]
+            .sort_values(["iso3", "year", value_name], na_position="first")
+            .drop_duplicates(["iso3", "year"], keep="last")
+        )
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
         out.to_csv(cache_path, index=False)
     return out
 
 
+def valid_world_bank_iso3(value: object) -> bool:
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return False
+    text = str(value).strip().upper()
+    return bool(re.fullmatch(r"[A-Z]{3}", text))
+
+
 def fetch_world_bank_country_metadata(iso3s: list[str]) -> pd.DataFrame:
     cache_path = WORLD_BANK_RAW / "country_metadata.csv"
+    requested = sorted({str(iso3).strip().upper() for iso3 in iso3s if valid_world_bank_iso3(iso3)})
+    columns = ["iso3", "region", "income_group", "metadata_source"]
+    cached = pd.DataFrame(columns=columns)
     if cache_path.exists():
         cached = pd.read_csv(cache_path)
-        if set(iso3s).issubset(set(cached.get("iso3", []))):
-            return cached[cached["iso3"].isin(iso3s)].copy()
+        cached = normalize_columns(cached)
+        cached = cached.rename(columns={"isocode": "iso3", "incomegroup": "income_group", "source": "metadata_source"})
+        for col in columns:
+            if col not in cached.columns:
+                cached[col] = "world_bank_api" if col == "metadata_source" else pd.NA
+        cached["iso3"] = cached["iso3"].astype(str).str.strip().str.upper()
+        cached = cached[columns].dropna(subset=["iso3"]).drop_duplicates(subset=["iso3"], keep="last")
+        if set(requested).issubset(set(cached["iso3"])):
+            return cached[cached["iso3"].isin(requested)].copy()
 
     rows = []
-    chunks = [sorted(set(iso3s))[idx : idx + 50] for idx in range(0, len(set(iso3s)), 50)]
-    for chunk in chunks:
-        url = "https://api.worldbank.org/v2/country/" + ";".join(chunk)
-        params = {"format": "json", "per_page": 400}
+    page = 1
+    pages = 1
+    while page <= pages:
+        params = {"format": "json", "per_page": 400, "page": page}
         try:
-            resp = requests.get(url, params=params, timeout=5)
+            resp = requests.get("https://api.worldbank.org/v2/country", params=params, timeout=10)
             if resp.status_code != 200:
-                continue
+                break
             payload = resp.json()
             if not isinstance(payload, list) or len(payload) < 2:
-                continue
+                break
+            meta = payload[0] if isinstance(payload[0], dict) else {}
+            pages = int(meta.get("pages") or pages)
             for item in payload[1]:
+                iso3 = str(item.get("id") or "").strip().upper()
+                region = (item.get("region") or {}).get("value")
+                if not valid_world_bank_iso3(iso3) or not region or region == "Aggregates":
+                    continue
                 rows.append(
                     {
-                        "iso3": item.get("id"),
-                        "region": (item.get("region") or {}).get("value"),
+                        "iso3": iso3,
+                        "region": region,
                         "income_group": (item.get("incomeLevel") or {}).get("value"),
+                        "metadata_source": "world_bank_api",
                     }
                 )
         except Exception:
-            continue
+            break
+        page += 1
 
-    out = pd.DataFrame(rows).dropna(subset=["iso3"]) if rows else pd.DataFrame(columns=["iso3", "region", "income_group"])
-    if not out.empty:
-        existing = pd.read_csv(cache_path) if cache_path.exists() else pd.DataFrame(columns=out.columns)
-        combined = pd.concat([existing, out], ignore_index=True).drop_duplicates(subset=["iso3"], keep="last")
+    fetched = pd.DataFrame(rows, columns=columns).dropna(subset=["iso3"]) if rows else pd.DataFrame(columns=columns)
+    if not fetched.empty:
+        combined = pd.concat([cached, fetched], ignore_index=True)
+        combined["iso3"] = combined["iso3"].astype(str).str.strip().str.upper()
+        combined = combined[columns].drop_duplicates(subset=["iso3"], keep="last")
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
         combined.to_csv(cache_path, index=False)
-    return out
+        cached = combined
+    return cached[cached["iso3"].isin(requested)].copy()
 
 
 def fetch_world_bank_controls(iso3s: list[str], start: int, end: int) -> pd.DataFrame:
@@ -4278,7 +4857,6 @@ def fetch_world_bank_controls(iso3s: list[str], start: int, end: int) -> pd.Data
 
 
 def exercise_02_panel_rows_for_leaf(leaf: pd.DataFrame) -> pd.DataFrame:
-    leaf = drop_excluded_hs6(leaf)
     exports = leaf[leaf["flow"] == "Exports"].copy()
     if exports.empty:
         return pd.DataFrame()
@@ -4288,10 +4866,11 @@ def exercise_02_panel_rows_for_leaf(leaf: pd.DataFrame) -> pd.DataFrame:
     if panel.empty:
         return pd.DataFrame()
 
-    oil = exports[exports["hs2"] == "27"].groupby(["reporter_code", "year", "flow"], as_index=False)["trade_value"].sum()
+    product_exports = drop_excluded_hs6(exports)
+    oil = product_exports[product_exports["hs2"] == "27"].groupby(["reporter_code", "year", "flow"], as_index=False)["trade_value"].sum()
     oil = oil.rename(columns={"trade_value": "oil_exports"})
     panel = panel.merge(oil, on=["reporter_code", "year", "flow"], how="left")
-    panel["oil_exports"] = panel["oil_exports"].fillna(0.0)
+    panel["oil_exports"] = pd.to_numeric(panel["oil_exports"], errors="coerce").fillna(0.0)
     panel["oil_export_share"] = panel["oil_exports"] / panel["total_trade_value"].replace(0, np.nan)
     panel = panel.rename(columns={"total_trade_value": "total_exports"})
     return panel[panel["flow"] == "Exports"].copy()
@@ -4375,6 +4954,15 @@ def add_exercise_02_us_deflated_growth(growth: pd.DataFrame) -> pd.DataFrame:
     if growth.empty:
         return growth
     out = growth.copy()
+    out = out.drop(
+        columns=[
+            "base_us_gdp_deflator",
+            "future_us_gdp_deflator",
+            "export_growth_log_us_deflated",
+            "annualized_export_growth_log_us_deflated",
+        ],
+        errors="ignore",
+    )
     end_year = int(pd.to_numeric(out["future_year"], errors="coerce").max())
     deflator = fetch_world_bank_indicator(["USA"], "NY.GDP.DEFL.ZS", "us_gdp_deflator", int(out["year"].min()), end_year)
     if deflator.empty:
@@ -4405,11 +4993,26 @@ def add_exercise_02_controls(growth: pd.DataFrame) -> pd.DataFrame:
     if growth.empty:
         return growth
     growth = add_exercise_02_us_deflated_growth(growth)
+    control_cols = [
+        "gdp_current_usd",
+        "population",
+        "gni_per_capita_current_usd",
+        "region",
+        "income_group",
+        "metadata_source",
+        "log_gdp_current_usd",
+        "log_population",
+        "log_gni_per_capita_current_usd",
+    ]
+    growth = growth.drop(columns=control_cols, errors="ignore")
     controls = fetch_world_bank_controls(
         sorted(growth["iso3"].dropna().unique()),
         int(growth["year"].min()),
         int(growth["year"].max()),
     )
+    if not controls.empty:
+        controls = controls.drop_duplicates(["iso3", "year"], keep="last")
+        controls.to_csv(sample_processed_path("exercise_02_world_bank_controls.csv"), index=False)
     out = growth.merge(controls, on=["iso3", "year"], how="left") if not controls.empty else growth.copy()
     for source, target in [
         ("gdp_current_usd", "log_gdp_current_usd"),
@@ -4724,34 +5327,263 @@ def run_exercise_02(leaf: pd.DataFrame) -> pd.DataFrame:
     return run_exercise_02_from_panel(panel, source_details={"mode": "in_memory_leaf"})
 
 
-def run_exercise_02_streaming(max_files: int | None = None) -> pd.DataFrame:
+def exercise_02_partial_dir() -> Path:
+    return sample_processed_dir() / "checkpoints" / "exercise_02_file_panels"
+
+
+def exercise_02_partial_path(raw_path: Path) -> Path:
+    return exercise_02_partial_dir() / checkpoint_name_for_raw(raw_path)
+
+
+def empty_exercise_02_panel() -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=[
+            "country",
+            "iso3",
+            "reporter_code",
+            "year",
+            "flow",
+            "variant",
+            "total_exports",
+            "product_gini",
+            "product_top_1pct_share",
+            "product_top_2pct_share",
+            "product_top_5pct_share",
+            "product_top_10pct_share",
+            "product_top_200_share",
+            "product_active_count",
+            "partner_total_trade_value",
+            "partner_gini",
+            "partner_top_1pct_share",
+            "partner_top_2pct_share",
+            "partner_top_5pct_share",
+            "partner_top_10pct_share",
+            "partner_top_200_share",
+            "partner_active_count",
+            "top_5_partner_share",
+            "product_partner_cell_gini",
+            "product_partner_cell_top_1pct_share",
+            "product_partner_cell_top_2pct_share",
+            "product_partner_cell_top_5pct_share",
+            "product_partner_cell_top_10pct_share",
+            "product_partner_cell_top_200_share",
+            "product_partner_cell_active_count",
+            "oil_exports",
+            "oil_export_share",
+        ]
+    )
+
+
+def exercise_02_panel_from_aggregate_values(
+    product_values: pd.DataFrame,
+    partner_values: pd.DataFrame,
+    cell_values: pd.DataFrame,
+    oil_values: pd.DataFrame,
+) -> pd.DataFrame:
+    product_cols = ["reporter_code", "year", "flow", "cmd_code", "trade_value"]
+    partner_cols = ["reporter_code", "year", "flow", "partner_code", "trade_value"]
+    cell_cols = ["reporter_code", "year", "flow", "cmd_code", "partner_code", "trade_value"]
+    oil_cols = ["reporter_code", "year", "flow", "trade_value"]
+    product_values = finish_group_sum_frame(product_values, product_cols[:-1])
+    partner_values = finish_group_sum_frame(partner_values, partner_cols[:-1], exclude_hs6=False)
+    cell_values = finish_group_sum_frame(cell_values, cell_cols[:-1])
+    oil_values = finish_group_sum_frame(oil_values, oil_cols[:-1], exclude_hs6=False)
+    if product_values.empty:
+        return empty_exercise_02_panel()
+
+    panel = save_country_panel()
+    country_meta = panel.set_index("reporter_code")[["country", "iso3"]].to_dict("index")
+    group_cols = ["reporter_code", "year", "flow"]
+    product_rows = []
+    partner_rows = []
+    cell_rows = []
+    for key, group in product_values.groupby(group_cols, sort=True):
+        reporter_code, year, flow = key
+        meta = country_meta.get(int(reporter_code), {"country": str(reporter_code), "iso3": ""})
+        base = {
+            "country": meta["country"],
+            "iso3": meta["iso3"],
+            "reporter_code": int(reporter_code),
+            "year": int(year),
+            "flow": flow,
+            "variant": "baseline",
+            "total_trade_value": float(group["trade_value"].sum()),
+        }
+        product_rows.append({**base, **metric_row(group["trade_value"], "product")})
+
+    for key, group in partner_values.groupby(group_cols, sort=True):
+        reporter_code, year, flow = key
+        meta = country_meta.get(int(reporter_code), {"country": str(reporter_code), "iso3": ""})
+        base = {
+            "country": meta["country"],
+            "iso3": meta["iso3"],
+            "reporter_code": int(reporter_code),
+            "year": int(year),
+            "flow": flow,
+            "variant": "baseline",
+            "total_trade_value": float(group["trade_value"].sum()),
+        }
+        partner_rows.append({**base, **metric_row(group["trade_value"], "partner"), "top_5_partner_share": top_share(group["trade_value"], n=5)})
+
+    for key, group in cell_values.groupby(group_cols, sort=True):
+        reporter_code, year, flow = key
+        meta = country_meta.get(int(reporter_code), {"country": str(reporter_code), "iso3": ""})
+        base = {
+            "country": meta["country"],
+            "iso3": meta["iso3"],
+            "reporter_code": int(reporter_code),
+            "year": int(year),
+            "flow": flow,
+            "variant": "baseline",
+            "total_trade_value": float(group["trade_value"].sum()),
+        }
+        cell_rows.append({**base, **metric_row(group["trade_value"], "product_partner_cell")})
+
+    panel = merge_metric_tables(pd.DataFrame(product_rows), pd.DataFrame(partner_rows), pd.DataFrame(cell_rows))
+    if panel.empty:
+        return empty_exercise_02_panel()
+    oil = oil_values.rename(columns={"trade_value": "oil_exports"})
+    panel = panel.merge(oil, on=["reporter_code", "year", "flow"], how="left")
+    panel["oil_exports"] = pd.to_numeric(panel["oil_exports"], errors="coerce").fillna(0.0)
+    panel["oil_export_share"] = panel["oil_exports"] / panel["total_trade_value"].replace(0, np.nan)
+    panel = panel.rename(columns={"total_trade_value": "total_exports"})
+    return panel[panel["flow"] == "Exports"].copy()
+
+
+def exercise_02_panel_rows_for_raw(raw_path: Path, chunk_rows: int = DEFAULT_CHUNK_ROWS) -> pd.DataFrame:
+    product_values: pd.DataFrame | None = None
+    partner_values: pd.DataFrame | None = None
+    cell_values: pd.DataFrame | None = None
+    oil_values: pd.DataFrame | None = None
+    group_cols = ["reporter_code", "year", "flow"]
+    for leaf in iter_leaf_trade_chunks(raw_path, chunk_rows=chunk_rows):
+        exports = leaf[leaf["flow"] == "Exports"].copy()
+        if exports.empty:
+            del leaf, exports
+            continue
+        product_exports = drop_excluded_hs6(exports)
+        if not product_exports.empty:
+            chunk_products = product_exports.groupby([*group_cols, "cmd_code"], as_index=False)["trade_value"].sum()
+            chunk_cells = product_exports.groupby([*group_cols, "cmd_code", "partner_code"], as_index=False)["trade_value"].sum()
+            chunk_oil = product_exports[product_exports["hs2"] == "27"].groupby(group_cols, as_index=False)["trade_value"].sum()
+            product_values = add_group_sum_frame(product_values, chunk_products, [*group_cols, "cmd_code"], compact_rows=250_000)
+            cell_values = add_group_sum_frame(cell_values, chunk_cells, [*group_cols, "cmd_code", "partner_code"], compact_rows=250_000)
+            oil_values = add_group_sum_frame(oil_values, chunk_oil, group_cols, compact_rows=250_000, exclude_hs6=False)
+        chunk_partners = exports.groupby([*group_cols, "partner_code"], as_index=False)["trade_value"].sum()
+        partner_values = add_group_sum_frame(partner_values, chunk_partners, [*group_cols, "partner_code"], compact_rows=250_000, exclude_hs6=False)
+        del leaf, exports, product_exports, chunk_partners
+        if "chunk_products" in locals():
+            del chunk_products, chunk_cells, chunk_oil
+        gc.collect()
+
+    panel = exercise_02_panel_from_aggregate_values(
+        finish_group_sum_frame(product_values, [*group_cols, "cmd_code"]),
+        finish_group_sum_frame(partner_values, [*group_cols, "partner_code"], exclude_hs6=False),
+        finish_group_sum_frame(cell_values, [*group_cols, "cmd_code", "partner_code"]),
+        finish_group_sum_frame(oil_values, group_cols, exclude_hs6=False),
+    )
+    gc.collect()
+    return panel
+
+
+def write_exercise_02_partial_for_raw(raw_path: Path, chunk_rows: int = DEFAULT_CHUNK_ROWS) -> tuple[Path, int]:
+    partial = exercise_02_partial_path(raw_path)
+    panel = exercise_02_panel_rows_for_raw(raw_path, chunk_rows=chunk_rows)
+    panel.to_parquet(partial, index=False)
+    return partial, int(len(panel))
+
+
+def write_exercise_02_partials(max_files: int | None = None, fresh: bool = False, chunk_rows: int = DEFAULT_CHUNK_ROWS) -> list[Path]:
+    partial_dir = exercise_02_partial_dir()
+    if fresh and partial_dir.exists():
+        shutil.rmtree(partial_dir)
+    partial_dir.mkdir(parents=True, exist_ok=True)
     files = hs_bulk_files(max_files=max_files)
     if not files:
         raise FileNotFoundError(f"No HS Comtrade bulk files found in {COMTRADE_BULK}")
-    frames = []
-    files_with_rows = 0
+
+    partials = []
+    manifest_rows = []
     for idx, path in enumerate(files, start=1):
+        partial = exercise_02_partial_path(path)
+        partials.append(partial)
+        if partial.exists():
+            print(f"[{idx}/{len(files)}] skip existing Exercise 2 checkpoint {partial.name}", flush=True)
+            manifest_rows.append({"raw_file": path.name, "partial_file": partial.name, "status": "already_exists"})
+            continue
         print(f"[{idx}/{len(files)}] Exercise 2 export panel from {path.name}", flush=True)
-        leaf = extract_leaf_trade(read_comtrade_file(path))
-        panel = exercise_02_panel_rows_for_leaf(leaf)
-        if not panel.empty:
-            files_with_rows += 1
-            frames.append(panel)
+        _, rows = write_exercise_02_partial_for_raw(path, chunk_rows=chunk_rows)
+        manifest_rows.append({"raw_file": path.name, "partial_file": partial.name, "status": "written", "rows": rows})
+        write_json(
+            RESULTS / "run_manifest_exercise_02_checkpoints.json",
+            {
+                "created_at_utc": now_utc(),
+                "mode": "exercise_02_checkpoint_partials",
+                "raw_files_seen": len(files),
+                "raw_files_attempted": idx,
+                "partial_files_present": len(list(partial_dir.glob("*.parquet"))),
+                "latest_raw_file": path.name,
+                "manifest_tail": manifest_rows[-25:],
+                "chunk_rows": int(chunk_rows),
+                "exercises_md_updated": False,
+            },
+        )
+    return partials
+
+
+def finalize_exercise_02_from_partials(partials: list[Path], source_details: dict | None = None) -> pd.DataFrame:
+    frames = []
+    missing = [path for path in partials if not path.exists()]
+    if missing:
+        raise RuntimeError(f"Exercise 2 checkpoint set is incomplete; missing {len(missing)} files.")
+    for partial in partials:
+        frame = pd.read_parquet(partial)
+        if not frame.empty:
+            frames.append(frame)
     if not frames:
-        raise RuntimeError("No Exercise 2 export panel rows were produced from HS bulk files.")
+        raise RuntimeError("No Exercise 2 export panel rows were produced from checkpoint files.")
     panel = pd.concat(frames, ignore_index=True)
-    growth = run_exercise_02_from_panel(
-        panel,
-        source_details={"mode": "streaming", "hs_bulk_files_processed": len(files), "hs_bulk_files_with_rows": files_with_rows},
+    duplicate_keys = panel.duplicated(["reporter_code", "year", "flow"], keep=False)
+    if duplicate_keys.any():
+        examples = panel.loc[duplicate_keys, ["reporter_code", "year", "flow"]].drop_duplicates().head(10).to_dict("records")
+        raise RuntimeError(f"Exercise 2 checkpoint panel has duplicate reporter-year-flow keys: {examples}")
+    return run_exercise_02_from_panel(panel, source_details=source_details or {})
+
+
+def run_exercise_02_streaming(
+    max_files: int | None = None,
+    fresh_checkpoints: bool = False,
+    finalize_only: bool = False,
+    chunk_rows: int = DEFAULT_CHUNK_ROWS,
+) -> pd.DataFrame:
+    files = hs_bulk_files(max_files=max_files)
+    if not files:
+        raise FileNotFoundError(f"No HS Comtrade bulk files found in {COMTRADE_BULK}")
+    if finalize_only:
+        partials = [exercise_02_partial_path(path) for path in files]
+        if not partials or any(not partial.exists() for partial in partials):
+            raise RuntimeError(f"No complete Exercise 2 checkpoint set found in {exercise_02_partial_dir()}.")
+    else:
+        partials = write_exercise_02_partials(max_files=max_files, fresh=fresh_checkpoints, chunk_rows=chunk_rows)
+    growth = finalize_exercise_02_from_partials(
+        partials,
+        source_details={
+            "mode": "checkpointed_streaming",
+            "hs_bulk_files_processed": len(files),
+            "partial_files": len(partials),
+            "partial_dir": str(exercise_02_partial_dir().relative_to(ROOT)),
+            "finalize_only": finalize_only,
+            "chunk_rows": int(chunk_rows),
+        },
     )
     write_json(
         RESULTS / "run_manifest.json",
         {
             "created_at_utc": now_utc(),
-            "mode": "exercise_02_streaming",
+            "mode": "exercise_02_checkpointed",
             "exercise": "2",
             "hs_bulk_files_seen": len(files),
-            "hs_bulk_files_with_rows": files_with_rows,
+            "partial_files": len(partials),
             "rows_growth": int(len(growth)),
             "exercises_md_updated": False,
         },
@@ -4875,7 +5707,7 @@ The estimates support or weaken a predictive relationship. They should not be re
 
 Do high-product/high-partner concentration countries grow differently after accounting for initial exports, oil share, and available World Bank controls?
 """
-    write_text(RESULTS / "exercise_02_bucket_growth.md", memo)
+    write_text(sample_results_dir() / "exercise_02_bucket_growth.md", memo)
 
 
 def partner_reference_table() -> pd.DataFrame:
@@ -4908,22 +5740,35 @@ def partner_reference_table() -> pd.DataFrame:
 
 
 def partner_region_table(partner_codes: Iterable[int]) -> pd.DataFrame:
+    requested = pd.DataFrame({"partner_code": sorted(set(int(code) for code in partner_codes if pd.notna(code)))})
+    if requested.empty:
+        return pd.DataFrame(columns=["partner_code", "partner_iso3", "partner_name", "partner_region", "partner_region_source", "partner_region_reliability"])
     ref = partner_reference_table()
     if ref.empty:
-        return pd.DataFrame({"partner_code": sorted(set(int(code) for code in partner_codes)), "partner_region": "Unknown"})
-    ref = ref[ref["partner_code"].isin(sorted(set(int(code) for code in partner_codes)))].copy()
-    iso3s = sorted(ref["partner_iso3"].replace("", np.nan).dropna().unique())
+        out = requested.copy()
+        out["partner_iso3"] = ""
+        out["partner_name"] = ""
+        out["partner_region"] = "Unknown"
+        out["partner_region_source"] = "unknown_no_comtrade_partner_reference"
+        out["partner_region_reliability"] = "unknown"
+        return out
+    ref = requested.merge(ref, on="partner_code", how="left")
+    ref["partner_iso3"] = ref["partner_iso3"].fillna("").astype(str).str.strip().str.upper()
+    iso3s = sorted(iso3 for iso3 in ref["partner_iso3"].replace("", np.nan).dropna().unique() if valid_world_bank_iso3(iso3))
     metadata = fetch_world_bank_country_metadata(iso3s) if iso3s else pd.DataFrame()
     if not metadata.empty:
-        ref = ref.merge(metadata[["iso3", "region"]], left_on="partner_iso3", right_on="iso3", how="left")
+        ref = ref.merge(metadata[["iso3", "region", "metadata_source"]], left_on="partner_iso3", right_on="iso3", how="left")
     else:
         ref["region"] = np.nan
+        ref["metadata_source"] = np.nan
     ref["partner_region"] = ref["region"].fillna("Unknown")
-    return ref[["partner_code", "partner_iso3", "partner_name", "partner_region"]].copy()
+    ref["partner_region_source"] = np.where(ref["region"].notna(), "world_bank", "unknown_no_world_bank_match")
+    ref["partner_region_reliability"] = np.where(ref["partner_region_source"] == "world_bank", "world_bank_country_region", "unknown")
+    ref["partner_name"] = ref["partner_name"].fillna("")
+    return ref[["partner_code", "partner_iso3", "partner_name", "partner_region", "partner_region_source", "partner_region_reliability"]].copy()
 
 
 def exercise_12_export_aggregates_for_leaf(leaf: pd.DataFrame) -> tuple[dict[str, pd.DataFrame], pd.DataFrame]:
-    leaf = drop_excluded_hs6(leaf)
     exports = leaf[leaf["flow"] == "Exports"].copy()
     if exports.empty:
         return {}, pd.DataFrame()
@@ -4931,22 +5776,36 @@ def exercise_12_export_aggregates_for_leaf(leaf: pd.DataFrame) -> tuple[dict[str
         exports["classification_code"] = ""
     exports["classification_code"] = exports["classification_code"].map(normalize_hs_classification_code)
 
-    dims = {
-        "product": ["classification_code", "cmd_code"],
-        "partner": ["partner_code"],
-        "product_partner_cell": ["classification_code", "cmd_code", "partner_code"],
-    }
     frames = {}
-    for dimension, cols in dims.items():
-        group_cols = ["reporter_code", "year", *cols]
-        values = exports.groupby(group_cols, as_index=False)["trade_value"].sum()
-        values["dimension"] = dimension
-        frames[dimension] = values
+    product_exports = drop_excluded_hs6(exports)
+    if not product_exports.empty:
+        product = product_exports.groupby(
+            ["reporter_code", "year", "classification_code", "cmd_code"],
+            as_index=False,
+        )["trade_value"].sum()
+        product["dimension"] = "product"
+        frames["product"] = product
 
-    product_partner = exports.groupby(
-        ["reporter_code", "year", "classification_code", "cmd_code", "partner_code"],
-        as_index=False,
-    )["trade_value"].sum()
+        cell = product_exports.groupby(
+            ["reporter_code", "year", "classification_code", "cmd_code", "partner_code"],
+            as_index=False,
+        )["trade_value"].sum()
+        cell["dimension"] = "product_partner_cell"
+        frames["product_partner_cell"] = cell
+
+    partner = exports.groupby(["reporter_code", "year", "partner_code"], as_index=False)["trade_value"].sum()
+    partner["dimension"] = "partner"
+    frames["partner"] = partner
+
+    if product_exports.empty:
+        product_partner = pd.DataFrame(
+            columns=["reporter_code", "year", "classification_code", "cmd_code", "partner_code", "trade_value"]
+        )
+    else:
+        product_partner = product_exports.groupby(
+            ["reporter_code", "year", "classification_code", "cmd_code", "partner_code"],
+            as_index=False,
+        )["trade_value"].sum()
     return frames, product_partner
 
 
@@ -4963,8 +5822,804 @@ def item_columns_for_dimension(dimension: str) -> list[str]:
     }[dimension]
 
 
+def hs_revision_node_id(classification_code: object, cmd_code: object) -> str:
+    revision = normalize_hs_classification_code(classification_code).replace("", "UNKNOWN")
+    code = normalize_digit_code(cmd_code, digits=6)
+    return f"{revision}:{code}" if code else f"{revision}:"
+
+
+def split_hs_revision_node_id(node_id: str) -> tuple[str, str]:
+    revision, _, code = str(node_id).partition(":")
+    return revision, code
+
+
+def load_hs6_leaf_codes_by_revision() -> dict[str, set[str]]:
+    by_revision: dict[str, set[str]] = {}
+    for revision in HS_REVISION_SEQUENCE:
+        path = CLASSIFICATION_RAW / f"{revision}.json"
+        codes: set[str] = set()
+        if path.exists():
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            for row in payload.get("results", []):
+                code = normalize_digit_code(row.get("id"), digits=6)
+                if code and str(row.get("isLeaf")) == "1" and code not in EXCLUDED_HS6_CODES:
+                    codes.add(code)
+        by_revision[revision] = codes
+    return by_revision
+
+
+def lt_hgl_weight_url(file_id: int) -> str:
+    return f"https://dataverse.harvard.edu/api/access/datafile/{int(file_id)}"
+
+
+def lt_hgl_weight_file_path(spec: dict[str, object]) -> Path:
+    return LT_HGL_WEIGHT_RAW / str(spec["filename"])
+
+
+def file_md5(path: Path) -> str:
+    digest = hashlib.md5()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def ensure_lt_hgl_weight_files() -> list[Path]:
+    paths: list[Path] = []
+    LT_HGL_WEIGHT_RAW.mkdir(parents=True, exist_ok=True)
+    for spec in LT_HGL_HS_BACKWARD_SPECS:
+        path = lt_hgl_weight_file_path(spec)
+        download_reference_file(lt_hgl_weight_url(int(spec["dataverse_file_id"])), path)
+        observed_md5 = file_md5(path)
+        expected_md5 = str(spec["md5"])
+        if observed_md5.lower() != expected_md5.lower():
+            raise RuntimeError(
+                f"LT/HGL conversion file checksum mismatch for {path.name}: "
+                f"expected {expected_md5}, observed {observed_md5}."
+            )
+        paths.append(path)
+    return paths
+
+
+def lt_hgl_source_column(source_label: str) -> str:
+    return f"source_hs{source_label.replace('HS', '')[-2:].lower()}"
+
+
+def lt_hgl_target_column(target_label: str) -> str:
+    return f"target_hs{target_label.replace('HS', '')[-2:].lower()}"
+
+
+def load_lt_hgl_adjacent_weights(spec: dict[str, object], codes_by_revision: dict[str, set[str]] | None = None) -> pd.DataFrame:
+    path = lt_hgl_weight_file_path(spec)
+    if not path.exists():
+        ensure_lt_hgl_weight_files()
+    source_revision = str(spec["source_revision"])
+    target_revision = str(spec["target_revision"])
+    source_label = str(spec["source_label"])
+    target_label = str(spec["target_label"])
+    source_col = lt_hgl_source_column(source_label)
+    target_col = lt_hgl_target_column(target_label)
+    raw = pd.read_csv(path, dtype=str)
+    missing_cols = {source_col, target_col, "weight"} - set(raw.columns)
+    if missing_cols:
+        raise RuntimeError(f"LT/HGL file {path.name} is missing columns: {sorted(missing_cols)}")
+    weights = pd.DataFrame(
+        {
+            "source_classification_code": source_revision,
+            "source_cmd_code": raw[source_col].map(lambda value: normalize_digit_code(value, digits=6)),
+            "target_classification_code": target_revision,
+            "target_cmd_code": raw[target_col].map(lambda value: normalize_digit_code(value, digits=6)),
+            "weight": pd.to_numeric(raw["weight"], errors="coerce"),
+            "source_file": path.name,
+            "source_dataset_doi": LT_HGL_DATASET_DOI,
+            "source_dataset_version": LT_HGL_DATASET_VERSION,
+            "source_dataverse_file_id": int(spec["dataverse_file_id"]),
+            "source_file_md5": str(spec["md5"]),
+        }
+    )
+    weights = weights.replace({"": np.nan}).dropna(subset=["source_cmd_code", "target_cmd_code", "weight"]).copy()
+    weights = weights[~weights["source_cmd_code"].isin(EXCLUDED_HS6_CODES)].copy()
+    weights = weights[~weights["target_cmd_code"].isin(EXCLUDED_HS6_CODES)].copy()
+    if weights.empty:
+        raise RuntimeError(f"LT/HGL file {path.name} produced no usable HS6 weights.")
+
+    grouped_sums = weights.groupby("source_cmd_code", observed=True)["weight"].sum()
+    bad = grouped_sums[(grouped_sums - 1.0).abs() > LT_HGL_RAW_WEIGHT_TOLERANCE]
+    if not bad.empty:
+        examples = bad.head(10).to_dict()
+        raise RuntimeError(f"LT/HGL file {path.name} has source-code weights far from 1 before normalization: {examples}")
+
+    raw_sum = weights.groupby("source_cmd_code", observed=True)["weight"].transform("sum")
+    weights["weight"] = weights["weight"] / raw_sum
+    weights = weights[weights["weight"] > 0].copy()
+    if codes_by_revision is None:
+        codes_by_revision = load_hs6_leaf_codes_by_revision()
+    source_codes = set(codes_by_revision.get(source_revision, set()))
+    target_codes = set(codes_by_revision.get(target_revision, set()))
+    mapped_sources = set(weights["source_cmd_code"].dropna().astype(str))
+    identity_codes = sorted((source_codes & target_codes) - mapped_sources - EXCLUDED_HS6_CODES)
+    if identity_codes:
+        identity = pd.DataFrame(
+            {
+                "source_classification_code": source_revision,
+                "source_cmd_code": identity_codes,
+                "target_classification_code": target_revision,
+                "target_cmd_code": identity_codes,
+                "weight": 1.0,
+                "source_file": path.name,
+                "source_dataset_doi": LT_HGL_DATASET_DOI,
+                "source_dataset_version": LT_HGL_DATASET_VERSION,
+                "source_dataverse_file_id": int(spec["dataverse_file_id"]),
+                "source_file_md5": str(spec["md5"]),
+            }
+        )
+        weights = pd.concat([weights, identity], ignore_index=True)
+
+    return (
+        weights.groupby(
+            [
+                "source_classification_code",
+                "source_cmd_code",
+                "target_classification_code",
+                "target_cmd_code",
+                "source_file",
+                "source_dataset_doi",
+                "source_dataset_version",
+                "source_dataverse_file_id",
+                "source_file_md5",
+            ],
+            as_index=False,
+            observed=True,
+        )["weight"]
+        .sum()
+        .sort_values(["source_classification_code", "source_cmd_code", "target_cmd_code"])
+        .reset_index(drop=True)
+    )
+
+
+def validate_lt_hgl_conversion_weights(weights: pd.DataFrame, label: str) -> dict[str, object]:
+    if weights.empty:
+        raise RuntimeError(f"{label} is empty.")
+    sums = weights.groupby(["source_classification_code", "source_cmd_code"], observed=True)["weight"].sum()
+    bad = sums[(sums - 1.0).abs() > LT_HGL_WEIGHT_TOLERANCE]
+    if not bad.empty:
+        examples = {f"{idx[0]}:{idx[1]}": float(value) for idx, value in bad.head(10).items()}
+        raise RuntimeError(f"{label} has source-code weights that do not sum to 1: {examples}")
+    dupes = weights.duplicated(["source_classification_code", "source_cmd_code", "target_classification_code", "target_cmd_code"])
+    if dupes.any():
+        examples = weights.loc[
+            dupes,
+            ["source_classification_code", "source_cmd_code", "target_classification_code", "target_cmd_code"],
+        ].head(10)
+        raise RuntimeError(f"{label} has duplicate source-target weights: {examples.to_dict(orient='records')}")
+    return {
+        "weight_rows": int(len(weights)),
+        "source_pairs": int(sums.shape[0]),
+        "target_codes": int(weights["target_cmd_code"].nunique()),
+        "max_targets_per_source": int(
+            weights.groupby(["source_classification_code", "source_cmd_code"], observed=True)["target_cmd_code"].nunique().max()
+        ),
+        "max_abs_weight_sum_error": float((sums - 1.0).abs().max()),
+    }
+
+
+def validate_lt_hgl_cached_weight_provenance(weights: pd.DataFrame) -> None:
+    """Ensure cached LT/HGL weights are the official HS1992/H0 conversion artifact."""
+    expected_values = {
+        "conversion_method": "lt_hgl_weighted_hs1992",
+        "source_dataset_doi": LT_HGL_DATASET_DOI,
+        "source_dataset_version": LT_HGL_DATASET_VERSION,
+        "target_classification_code": LT_HGL_TARGET_REVISION,
+    }
+    for column, expected in expected_values.items():
+        observed = set(weights[column].dropna().astype(str).unique().tolist())
+        if observed != {str(expected)}:
+            raise RuntimeError(
+                f"Cached LT/HGL HS1992 weights have unexpected {column}: "
+                f"expected {expected!r}, observed {sorted(observed)!r}."
+            )
+    bad_target_ids = ~weights["target_product_id"].astype(str).str.startswith(f"{LT_HGL_TARGET_LABEL}:")
+    if bad_target_ids.any():
+        examples = weights.loc[bad_target_ids, "target_product_id"].astype(str).head(10).tolist()
+        raise RuntimeError(f"Cached LT/HGL HS1992 weights have unexpected target product ids: {examples}")
+    if not LT_HGL_NORMALIZED_WEIGHTS_MANIFEST.exists():
+        raise RuntimeError(f"Cached LT/HGL weights are missing manifest: {LT_HGL_NORMALIZED_WEIGHTS_MANIFEST}")
+    manifest = json.loads(LT_HGL_NORMALIZED_WEIGHTS_MANIFEST.read_text(encoding="utf-8"))
+    manifest_expected = {
+        "conversion_method": "lt_hgl_weighted_hs1992",
+        "source_dataset_doi": LT_HGL_DATASET_DOI,
+        "source_dataset_version": LT_HGL_DATASET_VERSION,
+        "target_classification_code": LT_HGL_TARGET_REVISION,
+        "target_classification_label": LT_HGL_TARGET_LABEL,
+    }
+    for key, expected in manifest_expected.items():
+        observed = manifest.get(key)
+        if str(observed) != str(expected):
+            raise RuntimeError(
+                f"Cached LT/HGL manifest has unexpected {key}: expected {expected!r}, observed {observed!r}."
+            )
+    summary = manifest.get("summary") or {}
+    if int(summary.get("weight_rows") or -1) != int(len(weights)):
+        raise RuntimeError(
+            "Cached LT/HGL manifest row count does not match parquet: "
+            f"manifest={summary.get('weight_rows')!r}, parquet={len(weights)!r}."
+        )
+    ensure_lt_hgl_weight_files()
+    for spec in LT_HGL_HS_BACKWARD_SPECS:
+        path = lt_hgl_weight_file_path(spec)
+        observed_md5 = file_md5(path)
+        expected_md5 = str(spec["md5"])
+        if observed_md5.lower() != expected_md5.lower():
+            raise RuntimeError(
+                f"Cached LT/HGL raw file checksum mismatch for {path.name}: "
+                f"expected {expected_md5}, observed {observed_md5}."
+            )
+
+
+@lru_cache(maxsize=1)
+def load_lt_hgl_hs1992_conversion_weights() -> pd.DataFrame:
+    required = {
+        "source_classification_code",
+        "source_cmd_code",
+        "target_classification_code",
+        "target_cmd_code",
+        "target_product_id",
+        "weight",
+        "conversion_method",
+        "source_dataset_doi",
+        "source_dataset_version",
+    }
+    if LT_HGL_NORMALIZED_WEIGHTS_PATH.exists():
+        cached = pd.read_parquet(LT_HGL_NORMALIZED_WEIGHTS_PATH)
+        if required.issubset(cached.columns):
+            validate_lt_hgl_conversion_weights(cached, "cached LT/HGL HS1992 conversion weights")
+            validate_lt_hgl_cached_weight_provenance(cached)
+            return cached
+
+    ensure_lt_hgl_weight_files()
+    codes_by_revision = load_hs6_leaf_codes_by_revision()
+    conversions: dict[str, pd.DataFrame] = {}
+    h0_codes = sorted(codes_by_revision.get(LT_HGL_TARGET_REVISION, set()) - EXCLUDED_HS6_CODES)
+    conversions[LT_HGL_TARGET_REVISION] = pd.DataFrame(
+        {
+            "source_classification_code": LT_HGL_TARGET_REVISION,
+            "source_cmd_code": h0_codes,
+            "target_classification_code": LT_HGL_TARGET_REVISION,
+            "target_cmd_code": h0_codes,
+            "weight": 1.0,
+            "source_file": "identity_hs1992",
+            "source_dataset_doi": LT_HGL_DATASET_DOI,
+            "source_dataset_version": LT_HGL_DATASET_VERSION,
+            "source_dataverse_file_id": pd.NA,
+            "source_file_md5": "",
+        }
+    )
+    validate_lt_hgl_conversion_weights(conversions[LT_HGL_TARGET_REVISION], "LT/HGL H0 identity weights")
+
+    for spec in LT_HGL_HS_BACKWARD_SPECS:
+        source_revision = str(spec["source_revision"])
+        target_revision = str(spec["target_revision"])
+        adjacent = load_lt_hgl_adjacent_weights(spec, codes_by_revision=codes_by_revision)
+        validate_lt_hgl_conversion_weights(adjacent, f"LT/HGL adjacent {source_revision}->{target_revision} weights")
+        previous = conversions[target_revision]
+        composed = adjacent.merge(
+            previous[
+                [
+                    "source_cmd_code",
+                    "target_cmd_code",
+                    "weight",
+                    "source_file",
+                    "source_dataverse_file_id",
+                    "source_file_md5",
+                ]
+            ].rename(
+                columns={
+                    "source_cmd_code": "intermediate_cmd_code",
+                    "target_cmd_code": "final_target_cmd_code",
+                    "weight": "next_weight",
+                    "source_file": "next_source_file",
+                    "source_dataverse_file_id": "next_source_dataverse_file_id",
+                    "source_file_md5": "next_source_file_md5",
+                }
+            ),
+            left_on="target_cmd_code",
+            right_on="intermediate_cmd_code",
+            how="left",
+            validate="many_to_many",
+        )
+        missing = composed["final_target_cmd_code"].isna()
+        if missing.any():
+            examples = composed.loc[missing, ["source_classification_code", "source_cmd_code", "target_cmd_code"]].head(10)
+            raise RuntimeError(f"Could not compose LT/HGL {source_revision}->HS1992 weights: {examples.to_dict(orient='records')}")
+        composed["weight"] = composed["weight"] * composed["next_weight"]
+        composed["target_classification_code"] = LT_HGL_TARGET_REVISION
+        composed["target_cmd_code"] = composed["final_target_cmd_code"]
+        composed["source_file"] = composed["source_file"].astype(str) + "|" + composed["next_source_file"].astype(str)
+        composed["source_dataverse_file_id"] = (
+            composed["source_dataverse_file_id"].astype(str) + "|" + composed["next_source_dataverse_file_id"].astype(str)
+        )
+        composed["source_file_md5"] = composed["source_file_md5"].astype(str) + "|" + composed["next_source_file_md5"].astype(str)
+        keep = [
+            "source_classification_code",
+            "source_cmd_code",
+            "target_classification_code",
+            "target_cmd_code",
+            "source_file",
+            "source_dataset_doi",
+            "source_dataset_version",
+            "source_dataverse_file_id",
+            "source_file_md5",
+        ]
+        conversion = (
+            composed.groupby(keep, as_index=False, observed=True)["weight"]
+            .sum()
+            .query("weight > 0")
+            .sort_values(["source_classification_code", "source_cmd_code", "target_cmd_code"])
+            .reset_index(drop=True)
+        )
+        conversions[source_revision] = conversion
+        validate_lt_hgl_conversion_weights(conversion, f"LT/HGL composed {source_revision}->HS1992 weights")
+
+    all_weights = pd.concat([conversions[revision] for revision in HS_REVISION_SEQUENCE], ignore_index=True)
+    all_weights["conversion_method"] = "lt_hgl_weighted_hs1992"
+    all_weights["target_product_id"] = "HS1992:" + all_weights["target_cmd_code"].astype(str)
+    all_weights = all_weights[
+        [
+            "source_classification_code",
+            "source_cmd_code",
+            "target_classification_code",
+            "target_cmd_code",
+            "target_product_id",
+            "weight",
+            "conversion_method",
+            "source_file",
+            "source_dataset_doi",
+            "source_dataset_version",
+            "source_dataverse_file_id",
+            "source_file_md5",
+        ]
+    ].reset_index(drop=True)
+    summary = validate_lt_hgl_conversion_weights(all_weights, "LT/HGL HS1992 all-revision weights")
+    LT_HGL_NORMALIZED_WEIGHTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    all_weights.to_parquet(LT_HGL_NORMALIZED_WEIGHTS_PATH, index=False)
+    all_weights.to_csv(LT_HGL_NORMALIZED_WEIGHTS_CSV, index=False)
+    manifest = {
+        "created_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "source_dataset_doi": LT_HGL_DATASET_DOI,
+        "source_dataset_url": LT_HGL_DATASET_URL,
+        "source_dataset_version": LT_HGL_DATASET_VERSION,
+        "target_classification_code": LT_HGL_TARGET_REVISION,
+        "target_classification_label": LT_HGL_TARGET_LABEL,
+        "conversion_method": "lt_hgl_weighted_hs1992",
+        "official_weight_specs": LT_HGL_HS_BACKWARD_SPECS,
+        "summary": summary,
+        "outputs": {
+            "parquet": str(LT_HGL_NORMALIZED_WEIGHTS_PATH.relative_to(ROOT)),
+            "csv": str(LT_HGL_NORMALIZED_WEIGHTS_CSV.relative_to(ROOT)),
+        },
+    }
+    LT_HGL_NORMALIZED_WEIGHTS_MANIFEST.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    return all_weights
+
+
+def lt_hgl_hs1992_coverage(values: pd.DataFrame, weights: pd.DataFrame | None = None) -> dict[str, object]:
+    if values.empty:
+        return {
+            "lt_hgl_distinct_source_pairs": 0,
+            "lt_hgl_missing_distinct_source_pairs": 0,
+            "lt_hgl_missing_rows": 0,
+            "lt_hgl_missing_trade_value": 0.0,
+            "lt_hgl_weighted_target_pairs": 0,
+        }
+    weights = load_lt_hgl_hs1992_conversion_weights() if weights is None else weights
+    keys = weights[["source_classification_code", "source_cmd_code"]].drop_duplicates()
+    work = values[["classification_code", "cmd_code", "trade_value"]].copy()
+    work["classification_code"] = work["classification_code"].map(normalize_hs_classification_code).replace("", "UNKNOWN")
+    work["cmd_code"] = work["cmd_code"].map(lambda value: normalize_digit_code(value, digits=6))
+    work["trade_value"] = pd.to_numeric(work["trade_value"], errors="coerce").fillna(0.0)
+    work = drop_excluded_hs6(work)
+    joined = work.merge(
+        keys.assign(_lt_hgl_match=True),
+        left_on=["classification_code", "cmd_code"],
+        right_on=["source_classification_code", "source_cmd_code"],
+        how="left",
+        validate="many_to_one",
+    )
+    missing = joined["_lt_hgl_match"].isna()
+    return {
+        "lt_hgl_distinct_source_pairs": int(work[["classification_code", "cmd_code"]].drop_duplicates().shape[0]),
+        "lt_hgl_missing_distinct_source_pairs": int(joined.loc[missing, ["classification_code", "cmd_code"]].drop_duplicates().shape[0]),
+        "lt_hgl_missing_rows": int(missing.sum()),
+        "lt_hgl_missing_trade_value": float(joined.loc[missing, "trade_value"].sum()),
+        "lt_hgl_weighted_target_pairs": int(weights[["target_classification_code", "target_cmd_code"]].drop_duplicates().shape[0]),
+    }
+
+
+def apply_lt_hgl_hs1992_conversion(
+    values: pd.DataFrame,
+    weights: pd.DataFrame | None = None,
+    value_col: str = "trade_value",
+) -> pd.DataFrame:
+    if values.empty:
+        out = values.copy()
+        out["classification_code"] = LT_HGL_TARGET_REVISION
+        out["cmd_code"] = pd.Series(dtype="string")
+        out["product_id"] = pd.Series(dtype="string")
+        return out
+    weights = load_lt_hgl_hs1992_conversion_weights() if weights is None else weights
+    work = values.copy()
+    work["classification_code"] = work["classification_code"].map(normalize_hs_classification_code).replace("", "UNKNOWN")
+    work["cmd_code"] = work["cmd_code"].map(lambda value: normalize_digit_code(value, digits=6))
+    work = work.dropna(subset=["cmd_code"]).copy()
+    work = drop_excluded_hs6(work)
+    work[value_col] = pd.to_numeric(work[value_col], errors="coerce")
+    work = work.dropna(subset=[value_col]).copy()
+    if work.empty:
+        return pd.DataFrame(columns=list(values.columns) + ["product_id", "conversion_weight"])
+    converted = work.merge(
+        weights[
+            [
+                "source_classification_code",
+                "source_cmd_code",
+                "target_classification_code",
+                "target_cmd_code",
+                "target_product_id",
+                "weight",
+                "conversion_method",
+            ]
+        ],
+        left_on=["classification_code", "cmd_code"],
+        right_on=["source_classification_code", "source_cmd_code"],
+        how="left",
+        validate="many_to_many",
+    )
+    missing = converted["target_cmd_code"].isna()
+    if missing.any():
+        examples = converted.loc[missing, ["classification_code", "cmd_code"]].drop_duplicates().head(10).to_dict(orient="records")
+        missing_value = float(converted.loc[missing, value_col].sum())
+        raise RuntimeError(
+            f"LT/HGL HS1992 conversion is missing source codes with {missing_value:,.2f} trade value: {examples}"
+        )
+    converted["conversion_weight"] = pd.to_numeric(converted["weight"], errors="coerce")
+    converted[value_col] = converted[value_col] * converted["conversion_weight"]
+    converted["source_classification_code_original"] = converted["classification_code"]
+    converted["source_cmd_code_original"] = converted["cmd_code"]
+    converted["classification_code"] = converted["target_classification_code"]
+    converted["cmd_code"] = converted["target_cmd_code"]
+    converted["product_id"] = converted["target_product_id"]
+    converted = converted[converted[value_col] > 0].copy()
+    drop_cols = [
+        "source_classification_code",
+        "source_cmd_code",
+        "target_classification_code",
+        "target_cmd_code",
+        "target_product_id",
+        "weight",
+    ]
+    return converted.drop(columns=[col for col in drop_cols if col in converted.columns])
+
+
+def _combine_wco_code_words(words: list[dict]) -> list[tuple[float, str]]:
+    tokens: list[tuple[float, str]] = []
+    idx = 0
+    while idx < len(words):
+        word = words[idx]
+        text = str(word.get("text", "")).strip()
+        next_text = str(words[idx + 1].get("text", "")).strip() if idx + 1 < len(words) else ""
+        if text.lower() == "ex" and idx + 1 < len(words):
+            tokens.append((float(word.get("x0", 0.0)), "ex" + next_text))
+            idx += 2
+            continue
+        if re.fullmatch(r"(?i)ex\d{3}", text.replace(" ", "")) and idx + 1 < len(words):
+            tokens.append((float(word.get("x0", 0.0)), text + next_text))
+            idx += 2
+            continue
+        if re.fullmatch(r"\d{4}", text) and idx + 1 < len(words) and re.fullmatch(r"\.\d{2}", next_text):
+            tokens.append((float(word.get("x0", 0.0)), text + next_text))
+            idx += 2
+            continue
+        tokens.append((float(word.get("x0", 0.0)), text))
+        idx += 1
+
+    codes: list[tuple[float, str]] = []
+    for x0, token in tokens:
+        code = re.sub(r"(?i)^ex", "", token)
+        code = re.sub(r"\D", "", code)
+        if len(code) == 6 and code not in EXCLUDED_HS6_CODES:
+            codes.append((x0, code))
+    return codes
+
+
+def parse_wco_correlation_pdf(path: Path) -> list[tuple[str, str]]:
+    try:
+        import pdfplumber
+    except ImportError:
+        print("WARNING: pdfplumber is unavailable; WCO HS correlation PDFs cannot be parsed.", flush=True)
+        return []
+
+    edges: list[tuple[str, str]] = []
+    current_source_code: str | None = None
+    with pdfplumber.open(str(path)) as pdf:
+        for page in pdf.pages:
+            lines: dict[int, list[dict]] = {}
+            for word in page.extract_words(x_tolerance=1, y_tolerance=3, keep_blank_chars=False):
+                text = str(word.get("text", ""))
+                if not any(char.isdigit() for char in text) and text.lower() != "ex":
+                    continue
+                line_key = int(round(float(word.get("top", 0.0)) / 2) * 2)
+                lines.setdefault(line_key, []).append(word)
+            midpoint = float(page.width) / 2.0
+            for _line_key, words in sorted(lines.items()):
+                codes = _combine_wco_code_words(sorted(words, key=lambda item: float(item.get("x0", 0.0))))
+                left_codes = [code for x0, code in codes if x0 < midpoint]
+                right_codes = [code for x0, code in codes if x0 >= midpoint]
+                if left_codes:
+                    current_source_code = left_codes[-1]
+                    edges.extend((current_source_code, target_code) for target_code in right_codes)
+                elif right_codes and current_source_code is not None:
+                    edges.extend((current_source_code, target_code) for target_code in right_codes)
+    return sorted(set(edges))
+
+
+def load_wco_hs_revision_edges() -> list[dict[str, str]]:
+    edges: list[dict[str, str]] = []
+    for spec in HS_WCO_CORRELATION_SPECS:
+        source_revision = spec["source_revision"]
+        target_revision = spec["target_revision"]
+        destination = HS_HARMONIZATION_RAW / f"{source_revision}_{target_revision}_wco_table_ii.pdf"
+        try:
+            path = download_reference_file(spec["url"], destination)
+            for source_code, target_code in parse_wco_correlation_pdf(path):
+                edges.append(
+                    {
+                        "source_revision": source_revision,
+                        "source_code": source_code,
+                        "target_revision": target_revision,
+                        "target_code": target_code,
+                        "edge_source": spec["source_label"],
+                    }
+                )
+        except Exception as exc:
+            print(f"WARNING: Could not load {spec['source_label']}: {exc}", flush=True)
+    return edges
+
+
+def normalize_hs_edge(edge: object) -> dict[str, str]:
+    if isinstance(edge, dict):
+        source_revision = normalize_hs_classification_code(edge.get("source_revision"))
+        target_revision = normalize_hs_classification_code(edge.get("target_revision"))
+        source_code = normalize_digit_code(edge.get("source_code"), digits=6)
+        target_code = normalize_digit_code(edge.get("target_code"), digits=6)
+        edge_source = str(edge.get("edge_source") or "manual_test_edge")
+    else:
+        values = tuple(edge)  # type: ignore[arg-type]
+        if len(values) == 4:
+            source_revision, source_code, target_revision, target_code = values
+            edge_source = "manual_test_edge"
+        elif len(values) >= 5:
+            source_revision, source_code, target_revision, target_code, edge_source = values[:5]
+        else:
+            raise ValueError(f"Invalid HS harmonization edge: {edge}")
+        source_revision = normalize_hs_classification_code(source_revision)
+        target_revision = normalize_hs_classification_code(target_revision)
+        source_code = normalize_digit_code(source_code, digits=6)
+        target_code = normalize_digit_code(target_code, digits=6)
+        edge_source = str(edge_source)
+    if not source_revision or not target_revision or not source_code or not target_code:
+        raise ValueError(f"Invalid HS harmonization edge: {edge}")
+    return {
+        "source_revision": source_revision,
+        "source_code": source_code,
+        "target_revision": target_revision,
+        "target_code": target_code,
+        "edge_source": edge_source,
+    }
+
+
+def build_hs_harmonized_family_mapping_from_edges(
+    edges: Iterable[object],
+    codes_by_revision: dict[str, set[str]] | None = None,
+    max_family_nodes: int = HS_HARMONIZATION_MAX_FAMILY_NODES,
+) -> pd.DataFrame:
+    codes_by_revision = codes_by_revision or load_hs6_leaf_codes_by_revision()
+    parent: dict[str, str] = {}
+
+    def find(node: str) -> str:
+        parent.setdefault(node, node)
+        while parent[node] != node:
+            parent[node] = parent[parent[node]]
+            node = parent[node]
+        return node
+
+    def union(left: str, right: str) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root != right_root:
+            parent[max(left_root, right_root)] = min(left_root, right_root)
+
+    edge_records: list[tuple[str, str, str]] = []
+    for revision, codes in codes_by_revision.items():
+        revision = normalize_hs_classification_code(revision)
+        for code in codes:
+            code = normalize_digit_code(code, digits=6)
+            if code and code not in EXCLUDED_HS6_CODES:
+                parent.setdefault(f"{revision}:{code}", f"{revision}:{code}")
+
+    for revision_idx in range(len(HS_REVISION_SEQUENCE) - 1):
+        source_revision = HS_REVISION_SEQUENCE[revision_idx]
+        target_revision = HS_REVISION_SEQUENCE[revision_idx + 1]
+        for code in codes_by_revision.get(source_revision, set()) & codes_by_revision.get(target_revision, set()):
+            left = f"{source_revision}:{code}"
+            right = f"{target_revision}:{code}"
+            union(left, right)
+            edge_records.append((left, right, "unchanged_hs6_code"))
+
+    for raw_edge in edges:
+        edge = normalize_hs_edge(raw_edge)
+        if edge["source_code"] in EXCLUDED_HS6_CODES or edge["target_code"] in EXCLUDED_HS6_CODES:
+            continue
+        left = f"{edge['source_revision']}:{edge['source_code']}"
+        right = f"{edge['target_revision']}:{edge['target_code']}"
+        union(left, right)
+        edge_records.append((left, right, edge["edge_source"]))
+
+    components: dict[str, list[str]] = {}
+    for node in list(parent):
+        components.setdefault(find(node), []).append(node)
+
+    component_sources: dict[str, set[str]] = {root: set() for root in components}
+    for left, right, source in edge_records:
+        component_sources.setdefault(find(left), set()).add(source)
+        component_sources.setdefault(find(right), set()).add(source)
+
+    rows = []
+    for root, nodes in components.items():
+        nodes = sorted(nodes)
+        revisions = sorted({split_hs_revision_node_id(node)[0] for node in nodes})
+        sources = sorted(component_sources.get(root, set()))
+        source_node_count = len(nodes)
+        oversized = source_node_count > max_family_nodes
+        contains_wco = any(source.startswith("WCO ") for source in sources)
+        if oversized:
+            status = "ambiguous_oversized_component"
+        elif contains_wco:
+            status = "matched_wco_correlation"
+        elif len(revisions) > 1:
+            status = "matched_unchanged_hs6_code"
+        else:
+            status = "single_revision_reference"
+
+        family_id = f"HSF:{nodes[0].replace(':', '_')}"
+        for node in nodes:
+            revision, code = split_hs_revision_node_id(node)
+            analysis_family_id = f"HSF_UNMATCHED:{revision}_{code}" if oversized else family_id
+            rows.append(
+                {
+                    "classification_code": revision,
+                    "classification_label": HS_REVISION_LABELS.get(revision, revision),
+                    "cmd_code": code,
+                    "harmonized_product_id": analysis_family_id,
+                    "harmonization_status": status,
+                    "harmonization_source": "|".join(sources) if sources else "classification_reference_singleton",
+                    "source_component_id": family_id,
+                    "source_component_node_count": int(source_node_count),
+                    "analysis_family_node_count": 1 if oversized else int(source_node_count),
+                    "source_revision_count": int(len(revisions)),
+                    "max_family_nodes": int(max_family_nodes),
+                    "harmonization_version": f"{HS_HARMONIZATION_VERSION}_{max_family_nodes}",
+                }
+            )
+    return pd.DataFrame(rows).sort_values(["classification_code", "cmd_code"]).reset_index(drop=True)
+
+
+@lru_cache(maxsize=1)
+def load_hs_harmonized_family_mapping() -> pd.DataFrame:
+    required = {
+        "classification_code",
+        "cmd_code",
+        "harmonized_product_id",
+        "harmonization_status",
+        "harmonization_source",
+        "source_component_node_count",
+        "analysis_family_node_count",
+        "harmonization_version",
+    }
+    expected_version = f"{HS_HARMONIZATION_VERSION}_{HS_HARMONIZATION_MAX_FAMILY_NODES}"
+    if HS_HARMONIZATION_MAPPING_PATH.exists():
+        cached = pd.read_csv(HS_HARMONIZATION_MAPPING_PATH, dtype=str)
+        if required.issubset(cached.columns) and set(cached["harmonization_version"].dropna().unique()) == {expected_version}:
+            for col in ["source_component_node_count", "analysis_family_node_count", "source_revision_count", "max_family_nodes"]:
+                if col in cached.columns:
+                    cached[col] = pd.to_numeric(cached[col], errors="coerce")
+            return cached
+    mapping = build_hs_harmonized_family_mapping_from_edges(load_wco_hs_revision_edges())
+    HS_HARMONIZATION_MAPPING_PATH.parent.mkdir(parents=True, exist_ok=True)
+    mapping.to_csv(HS_HARMONIZATION_MAPPING_PATH, index=False)
+    return mapping
+
+
+def hs_harmonization_lookup(mapping: pd.DataFrame | None = None) -> pd.DataFrame:
+    mapping = load_hs_harmonized_family_mapping() if mapping is None else mapping.copy()
+    if mapping.empty:
+        return pd.DataFrame(
+            columns=[
+                "classification_code",
+                "cmd_code",
+                "harmonized_product_id",
+                "harmonization_status",
+                "harmonization_source",
+                "source_component_node_count",
+                "analysis_family_node_count",
+            ]
+        )
+    lookup = mapping.copy()
+    lookup["classification_code"] = lookup["classification_code"].map(normalize_hs_classification_code).replace("", "UNKNOWN")
+    lookup["cmd_code"] = lookup["cmd_code"].map(lambda value: normalize_digit_code(value, digits=6))
+    return lookup.dropna(subset=["classification_code", "cmd_code"]).drop_duplicates(subset=["classification_code", "cmd_code"], keep="last")
+
+
+def attach_hs_harmonized_product_id(values: pd.DataFrame, mapping: pd.DataFrame | None = None) -> pd.DataFrame:
+    if values.empty:
+        return values.copy()
+    out = values.copy()
+    lookup = hs_harmonization_lookup(mapping)
+    if lookup.empty:
+        out["harmonized_product_id"] = "HSF_UNMATCHED:" + out["classification_code"].astype(str) + "_" + out["cmd_code"].astype(str)
+        out["harmonization_status"] = "unmatched_no_mapping_available"
+        out["harmonization_source"] = "unmatched_no_mapping_available"
+        out["source_component_node_count"] = np.nan
+        out["analysis_family_node_count"] = 1
+        return out
+    out = out.merge(
+        lookup[
+            [
+                "classification_code",
+                "cmd_code",
+                "harmonized_product_id",
+                "harmonization_status",
+                "harmonization_source",
+                "source_component_node_count",
+                "analysis_family_node_count",
+            ]
+        ],
+        on=["classification_code", "cmd_code"],
+        how="left",
+    )
+    missing = out["harmonized_product_id"].isna()
+    out.loc[missing, "harmonized_product_id"] = (
+        "HSF_UNMATCHED:" + out.loc[missing, "classification_code"].astype(str) + "_" + out.loc[missing, "cmd_code"].astype(str)
+    )
+    out.loc[missing, "harmonization_status"] = "unmatched_not_in_reference"
+    out.loc[missing, "harmonization_source"] = "unmatched_not_in_reference"
+    out.loc[missing, "analysis_family_node_count"] = 1
+    return out
+
+
 EX12_TOP_DEFINITIONS = ("top_10", "top_1pct", "top_5pct")
-EX12_PRODUCT_ITEM_ID_MODES = ("hs6_revision", "hs4", "hs2", "cpa")
+EX12_PRODUCT_ITEM_ID_MODES = ("hs6_harmonized_family", "hs6_revision", "hs4", "hs2", "cpa")
+EX12_HEADLINE_PRODUCT_ITEM_ID_MODE = "hs6_harmonized_family"
+EX12_WIDE_PAIR_MERGE_MAX_STATE_ROWS = int(os.getenv("EX12_WIDE_PAIR_MERGE_MAX_STATE_ROWS", "3000000"))
+EX12_LOW_BASE_VALUE_USD = float(os.getenv("EX12_LOW_BASE_VALUE_USD", "10000"))
+EX12_LEAST_TRADED_BASE_SHARE = float(os.getenv("EX12_LEAST_TRADED_BASE_SHARE", "0.10"))
+
+
+def exercise_12_headline_mask(df: pd.DataFrame) -> pd.Series:
+    if df.empty or not {"dimension", "item_id_mode", "top_definition"}.issubset(df.columns):
+        return pd.Series(False, index=df.index)
+    return (
+        (df["top_definition"] == "top_10")
+        & (
+            ((df["dimension"] == "partner") & (df["item_id_mode"] == "partner"))
+            | (
+                df["dimension"].isin(["product", "product_partner_cell"])
+                & (df["item_id_mode"] == EX12_HEADLINE_PRODUCT_ITEM_ID_MODE)
+            )
+        )
+    )
+
+
+def exercise_12_headline_decomposition(df: pd.DataFrame) -> pd.DataFrame:
+    return df.loc[exercise_12_headline_mask(df)].copy() if not df.empty else df
 
 
 def top_cutoff_count(active_items: int, top_definition: str) -> int:
@@ -5011,6 +6666,7 @@ def prepare_exercise_12_item_values(
     dimension: str,
     item_id_mode: str,
     cpa_mapping: pd.DataFrame | None = None,
+    hs_family_mapping: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     if values.empty:
         return pd.DataFrame(columns=["reporter_code", "year", "item_id", "trade_value"])
@@ -5037,7 +6693,14 @@ def prepare_exercise_12_item_values(
         out = drop_excluded_hs6(out)
         if out.empty:
             return pd.DataFrame(columns=["reporter_code", "year", "item_id", "trade_value"])
-        if item_id_mode == "hs6_revision":
+        if item_id_mode == "hs6_harmonized_family":
+            if hs_family_mapping is not None and "harmonized_product_id" in hs_family_mapping.columns:
+                out = attach_hs_harmonized_product_id(out, hs_family_mapping)
+                out["product_item_id"] = out["harmonized_product_id"]
+            else:
+                out = apply_lt_hgl_hs1992_conversion(out, weights=hs_family_mapping)
+                out["product_item_id"] = out["product_id"]
+        elif item_id_mode == "hs6_revision":
             out["product_item_id"] = out["classification_code"] + ":" + out["cmd_code"]
         elif item_id_mode == "hs4":
             out["product_item_id"] = "HS4:" + out["cmd_code"].str[:4]
@@ -5152,6 +6815,204 @@ def exercise_12_hs_revision_diagnostics(values: pd.DataFrame, dimension: str, ho
     return pd.DataFrame(rows)
 
 
+def exercise_12_hs_harmonization_diagnostics(
+    values: pd.DataFrame,
+    dimension: str,
+    hs_family_mapping: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    if dimension == "partner" or values.empty:
+        return pd.DataFrame()
+    work = values.copy()
+    if "classification_code" not in work.columns:
+        work["classification_code"] = ""
+    if "cmd_code" not in work.columns:
+        return pd.DataFrame()
+    work["reporter_code"] = pd.to_numeric(work["reporter_code"], errors="coerce")
+    work["year"] = pd.to_numeric(work["year"], errors="coerce")
+    work["trade_value"] = pd.to_numeric(work["trade_value"], errors="coerce")
+    work["classification_code"] = work["classification_code"].map(normalize_hs_classification_code).replace("", "UNKNOWN")
+    work["cmd_code"] = work["cmd_code"].astype(str).str.extract(r"(\d{6})", expand=False)
+    work = work.dropna(subset=["reporter_code", "year", "trade_value", "cmd_code"])
+    work = drop_excluded_hs6(work)
+    if work.empty:
+        return pd.DataFrame()
+    work["reporter_code"] = work["reporter_code"].astype(int)
+    if hs_family_mapping is None or "harmonized_product_id" not in hs_family_mapping.columns:
+        weights = load_lt_hgl_hs1992_conversion_weights() if hs_family_mapping is None else hs_family_mapping
+        key_lookup = weights[["source_classification_code", "source_cmd_code"]].drop_duplicates()
+        target_lookup = weights[
+            ["source_classification_code", "source_cmd_code", "target_product_id"]
+        ].drop_duplicates()
+        matched = work.merge(
+            key_lookup.assign(_lt_hgl_match=True),
+            left_on=["classification_code", "cmd_code"],
+            right_on=["source_classification_code", "source_cmd_code"],
+            how="left",
+            validate="many_to_one",
+        )
+        matched["node_id"] = matched["classification_code"] + ":" + matched["cmd_code"]
+        matched["is_unmatched"] = matched["_lt_hgl_match"].isna()
+        rows = []
+        targets = work[["reporter_code", "classification_code", "cmd_code"]].drop_duplicates().merge(
+            target_lookup,
+            left_on=["classification_code", "cmd_code"],
+            right_on=["source_classification_code", "source_cmd_code"],
+            how="left",
+        )
+        target_counts = (
+            weights.groupby(["source_classification_code", "source_cmd_code"], observed=True)["target_product_id"]
+            .nunique()
+            .reset_index(name="lt_hgl_target_count")
+        )
+        target_distribution = (
+            work[["reporter_code", "classification_code", "cmd_code"]]
+            .drop_duplicates()
+            .merge(
+                target_counts,
+                left_on=["classification_code", "cmd_code"],
+                right_on=["source_classification_code", "source_cmd_code"],
+                how="left",
+            )
+        )
+        for reporter_code, group in matched.groupby("reporter_code", sort=True):
+            total_value = float(group["trade_value"].sum())
+            observed_codes = int(group["node_id"].nunique())
+            unmatched_value = float(group.loc[group["is_unmatched"], "trade_value"].sum())
+            unmatched_codes = int(group.loc[group["is_unmatched"], "node_id"].nunique())
+            reporter_targets = targets[targets["reporter_code"].eq(reporter_code)]
+            rows.append(
+                {
+                    "diagnostic_type": "coverage",
+                    "reporter_code": int(reporter_code),
+                    "dimension": dimension,
+                    "harmonization_status": "lt_hgl_weighted_hs1992",
+                    "source_component_node_count": np.nan,
+                    "observed_rows": int(len(group)),
+                    "observed_revision_codes": observed_codes,
+                    "analysis_families": int(reporter_targets["target_product_id"].dropna().nunique()),
+                    "observed_trade_value": total_value,
+                    "matched_trade_value": float(total_value - unmatched_value),
+                    "unmatched_trade_value": unmatched_value,
+                    "ambiguous_trade_value": 0.0,
+                    "unmatched_code_share": unmatched_codes / observed_codes if observed_codes else np.nan,
+                    "unmatched_value_share": unmatched_value / total_value if total_value else np.nan,
+                    "ambiguous_code_share": 0.0,
+                    "ambiguous_value_share": 0.0,
+                    "collapsed_family_code_share": np.nan,
+                    "max_source_component_node_count": np.nan,
+                    "old_same_revision_exclusion_comparison": (
+                        "LT/HGL weighted conversion to HS1992/H0; official weights from "
+                        f"Harvard Dataverse DOI {LT_HGL_DATASET_DOI} v{LT_HGL_DATASET_VERSION}."
+                    ),
+                }
+            )
+        family_reporter_code = int(work["reporter_code"].iloc[0]) if work["reporter_code"].nunique() == 1 else np.nan
+        for row in (
+            target_distribution.groupby("lt_hgl_target_count", dropna=False, as_index=False)
+            .agg(observed_revision_codes=("cmd_code", "nunique"))
+            .itertuples(index=False)
+        ):
+            target_count = row.lt_hgl_target_count
+            status = "lt_hgl_missing_weight" if pd.isna(target_count) else "lt_hgl_weighted_hs1992"
+            rows.append(
+                {
+                    "diagnostic_type": "family_size_distribution",
+                    "reporter_code": family_reporter_code,
+                    "dimension": dimension,
+                    "harmonization_status": status,
+                    "source_component_node_count": target_count,
+                    "observed_rows": np.nan,
+                    "observed_revision_codes": int(row.observed_revision_codes),
+                    "analysis_families": np.nan,
+                    "observed_trade_value": np.nan,
+                    "matched_trade_value": np.nan,
+                    "unmatched_trade_value": np.nan,
+                    "ambiguous_trade_value": 0.0,
+                    "unmatched_code_share": np.nan,
+                    "unmatched_value_share": np.nan,
+                    "ambiguous_code_share": 0.0,
+                    "ambiguous_value_share": 0.0,
+                    "collapsed_family_code_share": np.nan,
+                    "max_source_component_node_count": target_count,
+                    "old_same_revision_exclusion_comparison": (
+                        "LT/HGL weighted conversion to HS1992/H0; source_component_node_count is the "
+                        "number of weighted HS1992 targets for an observed source HS6 code."
+                    ),
+                }
+            )
+        return pd.DataFrame(rows)
+
+    work = attach_hs_harmonized_product_id(work, hs_family_mapping)
+    work["node_id"] = work["classification_code"] + ":" + work["cmd_code"]
+    work["is_unmatched"] = work["harmonization_status"].astype(str).str.startswith("unmatched")
+    work["is_ambiguous"] = work["harmonization_status"].eq("ambiguous_oversized_component")
+    work["is_collapsed_family"] = (
+        pd.to_numeric(work["analysis_family_node_count"], errors="coerce").fillna(1) > 1
+    )
+
+    rows = []
+    for reporter_code, group in work.groupby("reporter_code", sort=True):
+        total_value = float(group["trade_value"].sum())
+        observed_codes = int(group["node_id"].nunique())
+        unmatched_codes = int(group.loc[group["is_unmatched"], "node_id"].nunique())
+        ambiguous_codes = int(group.loc[group["is_ambiguous"], "node_id"].nunique())
+        rows.append(
+            {
+                "diagnostic_type": "coverage",
+                "reporter_code": int(reporter_code),
+                "dimension": dimension,
+                "harmonization_status": "all_observed",
+                "source_component_node_count": np.nan,
+                "observed_rows": int(len(group)),
+                "observed_revision_codes": observed_codes,
+                "analysis_families": int(group["harmonized_product_id"].nunique()),
+                "observed_trade_value": total_value,
+                "matched_trade_value": float(group.loc[~group["is_unmatched"] & ~group["is_ambiguous"], "trade_value"].sum()),
+                "unmatched_trade_value": float(group.loc[group["is_unmatched"], "trade_value"].sum()),
+                "ambiguous_trade_value": float(group.loc[group["is_ambiguous"], "trade_value"].sum()),
+                "unmatched_code_share": unmatched_codes / observed_codes if observed_codes else np.nan,
+                "unmatched_value_share": float(group.loc[group["is_unmatched"], "trade_value"].sum()) / total_value if total_value else np.nan,
+                "ambiguous_code_share": ambiguous_codes / observed_codes if observed_codes else np.nan,
+                "ambiguous_value_share": float(group.loc[group["is_ambiguous"], "trade_value"].sum()) / total_value if total_value else np.nan,
+                "collapsed_family_code_share": int(group.loc[group["is_collapsed_family"], "node_id"].nunique()) / observed_codes if observed_codes else np.nan,
+                "max_source_component_node_count": float(pd.to_numeric(group["source_component_node_count"], errors="coerce").max()),
+                "old_same_revision_exclusion_comparison": "See hs_revision_pair_diagnostics.csv; harmonized mode does not drop pairs solely because HS revision changes.",
+            }
+        )
+
+    family_reporter_code = int(work["reporter_code"].iloc[0]) if work["reporter_code"].nunique() == 1 else np.nan
+    family_sizes = (
+        work.drop_duplicates(["node_id", "harmonized_product_id", "harmonization_status", "source_component_node_count"])
+        .groupby(["harmonization_status", "source_component_node_count"], dropna=False, as_index=False)
+        .agg(observed_revision_codes=("node_id", "nunique"), analysis_families=("harmonized_product_id", "nunique"))
+    )
+    for row in family_sizes.itertuples(index=False):
+        rows.append(
+            {
+                "diagnostic_type": "family_size_distribution",
+                "reporter_code": family_reporter_code,
+                "dimension": dimension,
+                "harmonization_status": row.harmonization_status,
+                "source_component_node_count": row.source_component_node_count,
+                "observed_rows": np.nan,
+                "observed_revision_codes": int(row.observed_revision_codes),
+                "analysis_families": int(row.analysis_families),
+                "observed_trade_value": np.nan,
+                "matched_trade_value": np.nan,
+                "unmatched_trade_value": np.nan,
+                "ambiguous_trade_value": np.nan,
+                "unmatched_code_share": np.nan,
+                "unmatched_value_share": np.nan,
+                "ambiguous_code_share": np.nan,
+                "ambiguous_value_share": np.nan,
+                "collapsed_family_code_share": np.nan,
+                "max_source_component_node_count": row.source_component_node_count,
+                "old_same_revision_exclusion_comparison": "See hs_revision_pair_diagnostics.csv.",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def assign_size_states_for_items(values: pd.DataFrame, top_definition: str) -> pd.DataFrame:
     if values.empty:
         return pd.DataFrame(columns=["reporter_code", "year", "item_id", "trade_value", "rank", "size_state"])
@@ -5175,6 +7036,76 @@ def assign_size_state_columns(values: pd.DataFrame) -> pd.DataFrame:
             f"small_active_non_{top_definition}",
         )
     return out
+
+
+def mark_exercise_12_low_base_items(
+    df: pd.DataFrame,
+    threshold_share: float = EX12_LEAST_TRADED_BASE_SHARE,
+) -> pd.DataFrame:
+    """Flag active base-year items in the least-traded base basket.
+
+    The binary approximation includes the threshold-crossing item so every
+    country-year with positive base exports has a nonempty least-traded basket.
+    """
+    if df.empty:
+        out = df.copy()
+        out["base_least_traded_10pct"] = False
+        return out
+
+    out = df.copy()
+    out["base_least_traded_10pct"] = False
+    positive = out[pd.to_numeric(out["base_value"], errors="coerce").fillna(0.0) > 0].copy()
+    if positive.empty:
+        return out
+
+    positive["base_value_numeric"] = pd.to_numeric(positive["base_value"], errors="coerce").fillna(0.0)
+    positive = positive.sort_values(["reporter_code", "year", "base_value_numeric", "item_id"], kind="mergesort")
+    group_cols = ["reporter_code", "year"]
+    positive["base_total_for_low_base"] = positive.groupby(group_cols)["base_value_numeric"].transform("sum")
+    positive["base_cumulative_before"] = (
+        positive.groupby(group_cols)["base_value_numeric"].cumsum() - positive["base_value_numeric"]
+    )
+    selected = (positive["base_total_for_low_base"] > 0) & (
+        positive["base_cumulative_before"] < threshold_share * positive["base_total_for_low_base"]
+    )
+    out.loc[positive.index[selected], "base_least_traded_10pct"] = True
+    return out
+
+
+def exercise_12_growth_driver_categories(
+    df: pd.DataFrame,
+    base_state_col: str,
+    top_definition: str,
+) -> pd.Series:
+    base_value = pd.to_numeric(df["base_value"], errors="coerce").fillna(0.0)
+    future_value = pd.to_numeric(df["future_value"], errors="coerce").fillna(0.0)
+    grew = future_value > base_value
+    was_large = (base_value > 0) & df[base_state_col].eq(f"large_{top_definition}")
+    least_traded = (
+        df["base_least_traded_10pct"].fillna(False).astype(bool)
+        if "base_least_traded_10pct" in df.columns
+        else pd.Series(False, index=df.index)
+    )
+    return pd.Series(
+        np.select(
+            [
+                was_large,
+                (base_value == 0) & (future_value > 0),
+                (base_value > 0) & (base_value < EX12_LOW_BASE_VALUE_USD) & grew,
+                (base_value > 0) & least_traded & grew,
+                base_value > 0,
+            ],
+            [
+                f"existing_{top_definition}",
+                "strict_new_item",
+                "low_base_under_10k_grower",
+                "least_traded_10pct_grower",
+                f"existing_non_{top_definition}",
+            ],
+            default="no_base_no_future",
+        ),
+        index=df.index,
+    )
 
 
 def exercise_12_pair_merge_wide(
@@ -5212,6 +7143,40 @@ def exercise_12_pair_merge_wide(
     return merged
 
 
+def exercise_12_pair_merge_wide_for_base_year(
+    states: pd.DataFrame,
+    reporter_code: int,
+    base_year: int,
+    horizon: int,
+) -> pd.DataFrame:
+    state_cols = [f"size_state_{top_definition}" for top_definition in EX12_TOP_DEFINITIONS]
+    base_cols = ["reporter_code", "year", "item_id", "trade_value", "rank", "active_item_count", *state_cols]
+    base_rename = {
+        "trade_value": "base_value",
+        "rank": "base_rank",
+        "active_item_count": "base_active_item_count",
+        **{col: f"base_{col}" for col in state_cols},
+    }
+    future_rename = {
+        "trade_value": "future_value",
+        "rank": "future_rank",
+        "active_item_count": "future_active_item_count",
+        **{col: f"future_{col}" for col in state_cols},
+    }
+    future_year = int(base_year) + int(horizon)
+    base = states[(states["reporter_code"] == int(reporter_code)) & (states["year"] == int(base_year))][base_cols].rename(columns=base_rename)
+    future = states[(states["reporter_code"] == int(reporter_code)) & (states["year"] == future_year)][base_cols].rename(columns=future_rename)
+    if base.empty and future.empty:
+        return pd.DataFrame()
+    merged = base.merge(future, on=["reporter_code", "item_id"], how="outer")
+    merged = merged.drop(columns=[col for col in ["year_x", "year_y"] if col in merged.columns])
+    merged["year"] = int(base_year)
+    merged["future_year"] = future_year
+    merged["base_value"] = merged["base_value"].fillna(0.0)
+    merged["future_value"] = merged["future_value"].fillna(0.0)
+    return merged
+
+
 def exercise_12_accounting_from_pair(
     merged: pd.DataFrame,
     dimension: str,
@@ -5221,18 +7186,12 @@ def exercise_12_accounting_from_pair(
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     if merged.empty:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
-    work = merged.copy()
+    work = merged
     base_state_col = f"base_size_state_{top_definition}"
     future_state_col = f"future_size_state_{top_definition}"
     work["net_contribution"] = work["future_value"] - work["base_value"]
-    work["driver_category"] = np.select(
-        [
-            (work["base_value"] > 0) & (work[base_state_col] == f"large_{top_definition}"),
-            work["base_value"] > 0,
-        ],
-        [f"existing_{top_definition}", f"existing_non_{top_definition}"],
-        default="new_item",
-    )
+    work = mark_exercise_12_low_base_items(work)
+    work["driver_category"] = exercise_12_growth_driver_categories(work, base_state_col, top_definition)
     net = work.groupby(["reporter_code", "year", "future_year", "driver_category"], as_index=False).agg(
         contribution=("net_contribution", "sum"),
         base_value=("base_value", "sum"),
@@ -5251,20 +7210,16 @@ def exercise_12_accounting_from_pair(
     net["accounting_type"] = "net"
 
     gross_parts = []
-    positive = work[work["net_contribution"] > 0].copy()
+    gross_cols = ["reporter_code", "year", "future_year", "item_id", "base_value", "future_value", "net_contribution", base_state_col]
+    if "base_least_traded_10pct" in work.columns:
+        gross_cols.append("base_least_traded_10pct")
+    positive = work.loc[work["net_contribution"] > 0, gross_cols].copy()
     if not positive.empty:
-        positive["driver_category"] = np.select(
-            [
-                (positive["base_value"] > 0) & (positive[base_state_col] == f"large_{top_definition}"),
-                positive["base_value"] > 0,
-            ],
-            [f"existing_{top_definition}", f"existing_non_{top_definition}"],
-            default="new_item",
-        )
+        positive["driver_category"] = exercise_12_growth_driver_categories(positive, base_state_col, top_definition)
         positive["contribution"] = positive["net_contribution"]
         positive["accounting_type"] = "gross_positive"
         gross_parts.append(positive)
-    negative = work[work["net_contribution"] < 0].copy()
+    negative = work.loc[work["net_contribution"] < 0, gross_cols].copy()
     if not negative.empty:
         negative["driver_category"] = np.select(
             [
@@ -5301,7 +7256,7 @@ def exercise_12_accounting_from_pair(
     else:
         gross_out = pd.DataFrame()
 
-    transitions = work.copy()
+    transitions = work[["reporter_code", "year", "future_year", "item_id", "base_value", "future_value", base_state_col, future_state_col]].copy()
     transitions["base_state"] = transitions[base_state_col].fillna("absent")
     transitions["future_state"] = transitions[future_state_col].fillna("absent")
     transition_out = transitions.groupby(
@@ -5359,14 +7314,8 @@ def growth_decomposition_accounting(
         if merged.empty:
             continue
         merged["net_contribution"] = merged["future_value"] - merged["base_value"]
-        merged["driver_category"] = np.select(
-            [
-                (merged["base_value"] > 0) & (merged["base_size_state"] == f"large_{top_definition}"),
-                merged["base_value"] > 0,
-            ],
-            [f"existing_{top_definition}", f"existing_non_{top_definition}"],
-            default="new_item",
-        )
+        merged = mark_exercise_12_low_base_items(merged)
+        merged["driver_category"] = exercise_12_growth_driver_categories(merged, "base_size_state", top_definition)
         net = merged.groupby(["reporter_code", "year", "future_year", "driver_category"], as_index=False).agg(
             contribution=("net_contribution", "sum"),
             base_value=("base_value", "sum"),
@@ -5385,14 +7334,7 @@ def growth_decomposition_accounting(
 
         positive = merged[merged["net_contribution"] > 0].copy()
         if not positive.empty:
-            positive["driver_category"] = np.select(
-                [
-                    (positive["base_value"] > 0) & (positive["base_size_state"] == f"large_{top_definition}"),
-                    positive["base_value"] > 0,
-                ],
-                [f"existing_{top_definition}", f"existing_non_{top_definition}"],
-                default="new_item",
-            )
+            positive["driver_category"] = exercise_12_growth_driver_categories(positive, "base_size_state", top_definition)
             positive["contribution"] = positive["net_contribution"]
             positive["accounting_type"] = "gross_positive"
             gross_rows.append(positive)
@@ -5476,44 +7418,125 @@ def exercise_12_accounting_outputs_for_values(
     dimension: str,
     horizons: Iterable[int],
     cpa_mapping: pd.DataFrame | None = None,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    hs_family_mapping: pd.DataFrame | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     net_rows = []
     gross_rows = []
     transition_rows = []
     diagnostic_rows = []
-    horizons = tuple(int(horizon) for horizon in horizons)
-    for item_id_mode in exercise_12_item_modes_for_dimension(dimension):
-        diagnostics = exercise_12_hs_revision_diagnostics(raw_values, dimension, horizons) if item_id_mode == "hs6_revision" else pd.DataFrame()
-        if not diagnostics.empty:
-            diagnostic_rows.append(diagnostics)
-        item_values = prepare_exercise_12_item_values(raw_values, dimension, item_id_mode, cpa_mapping=cpa_mapping)
-        if item_values.empty:
+    harmonization_diagnostic_rows = []
+    for kind, chunk in iter_exercise_12_accounting_output_chunks(
+        raw_values,
+        dimension,
+        horizons,
+        cpa_mapping=cpa_mapping,
+        hs_family_mapping=hs_family_mapping,
+    ):
+        if chunk.empty:
             continue
-        states = assign_size_state_columns(item_values)
-        for horizon in horizons:
-            paired = exercise_12_pair_merge_wide(states, raw_values, dimension, item_id_mode, horizon)
-            if paired.empty:
-                continue
-            for top_definition in EX12_TOP_DEFINITIONS:
-                net, gross, transitions = exercise_12_accounting_from_pair(
-                    paired,
-                    dimension,
-                    horizon,
-                    item_id_mode,
-                    top_definition,
-                )
-                if not net.empty:
-                    net_rows.append(net)
-                if not gross.empty:
-                    gross_rows.append(gross)
-                if not transitions.empty:
-                    transition_rows.append(transitions)
+        if kind == "net":
+            net_rows.append(chunk)
+        elif kind == "gross":
+            gross_rows.append(chunk)
+        elif kind == "size_transition":
+            transition_rows.append(chunk)
+        elif kind == "hs_revision_diagnostics":
+            diagnostic_rows.append(chunk)
+        elif kind == "hs_harmonization_diagnostics":
+            harmonization_diagnostic_rows.append(chunk)
     return (
         pd.concat(net_rows, ignore_index=True) if net_rows else pd.DataFrame(),
         pd.concat(gross_rows, ignore_index=True) if gross_rows else pd.DataFrame(),
         pd.concat(transition_rows, ignore_index=True) if transition_rows else pd.DataFrame(),
         pd.concat(diagnostic_rows, ignore_index=True) if diagnostic_rows else pd.DataFrame(),
+        pd.concat(harmonization_diagnostic_rows, ignore_index=True) if harmonization_diagnostic_rows else pd.DataFrame(),
     )
+
+
+def iter_exercise_12_accounting_output_chunks(
+    raw_values: pd.DataFrame,
+    dimension: str,
+    horizons: Iterable[int],
+    cpa_mapping: pd.DataFrame | None = None,
+    hs_family_mapping: pd.DataFrame | None = None,
+) -> Iterable[tuple[str, pd.DataFrame]]:
+    horizons = tuple(int(horizon) for horizon in horizons)
+    for item_id_mode in exercise_12_item_modes_for_dimension(dimension):
+        diagnostics = exercise_12_hs_revision_diagnostics(raw_values, dimension, horizons) if item_id_mode == "hs6_revision" else pd.DataFrame()
+        if not diagnostics.empty:
+            yield "hs_revision_diagnostics", diagnostics
+        harmonization_diagnostics = (
+            exercise_12_hs_harmonization_diagnostics(raw_values, dimension, hs_family_mapping=hs_family_mapping)
+            if item_id_mode == "hs6_harmonized_family"
+            else pd.DataFrame()
+        )
+        if not harmonization_diagnostics.empty:
+            yield "hs_harmonization_diagnostics", harmonization_diagnostics
+        item_values = prepare_exercise_12_item_values(
+            raw_values,
+            dimension,
+            item_id_mode,
+            cpa_mapping=cpa_mapping,
+            hs_family_mapping=hs_family_mapping,
+        )
+        if item_values.empty:
+            continue
+        states = assign_size_state_columns(item_values)
+        del item_values
+        for horizon in horizons:
+            if len(states) <= EX12_WIDE_PAIR_MERGE_MAX_STATE_ROWS:
+                paired = exercise_12_pair_merge_wide(states, raw_values, dimension, item_id_mode, horizon)
+                if paired.empty:
+                    continue
+                for top_definition in EX12_TOP_DEFINITIONS:
+                    net, gross, transitions = exercise_12_accounting_from_pair(
+                        paired,
+                        dimension,
+                        horizon,
+                        item_id_mode,
+                        top_definition,
+                    )
+                    if not net.empty:
+                        yield "net", net
+                    if not gross.empty:
+                        yield "gross", gross
+                    if not transitions.empty:
+                        yield "size_transition", transitions
+                    del net, gross, transitions
+                del paired
+                gc.collect()
+                continue
+            valid_base_years = exercise_12_allowed_base_years(states, raw_values, dimension, item_id_mode, horizon)
+            if valid_base_years.empty:
+                continue
+            for valid_row in valid_base_years.itertuples(index=False):
+                paired = exercise_12_pair_merge_wide_for_base_year(
+                    states,
+                    int(valid_row.reporter_code),
+                    int(valid_row.year),
+                    int(horizon),
+                )
+                if paired.empty:
+                    continue
+                for top_definition in EX12_TOP_DEFINITIONS:
+                    net, gross, transitions = exercise_12_accounting_from_pair(
+                        paired,
+                        dimension,
+                        horizon,
+                        item_id_mode,
+                        top_definition,
+                    )
+                    if not net.empty:
+                        yield "net", net
+                    if not gross.empty:
+                        yield "gross", gross
+                    if not transitions.empty:
+                        yield "size_transition", transitions
+                    del net, gross, transitions
+                del paired
+                gc.collect()
+        del states
+        gc.collect()
 
 
 def assign_size_states(values: pd.DataFrame, dimension: str) -> pd.DataFrame:
@@ -5576,14 +7599,9 @@ def growth_decomposition(values: pd.DataFrame, dimension: str, horizons: Iterabl
         merged["base_value"] = merged["base_value"].fillna(0.0)
         merged["future_value"] = merged["future_value"].fillna(0.0)
         merged["growth_contribution"] = merged["future_value"] - merged["base_value"]
-        merged["driver_category"] = np.select(
-            [
-                (merged["base_value"] > 0) & (merged["base_rank"] <= 10),
-                merged["base_value"] > 0,
-            ],
-            ["existing_top_10", "existing_non_top_10"],
-            default="new_item",
-        )
+        merged["item_id"] = merged[item_cols].astype(str).agg("|".join, axis=1)
+        merged = mark_exercise_12_low_base_items(merged)
+        merged["driver_category"] = exercise_12_growth_driver_categories(merged, "base_size_state", "top_10")
         summary = merged.groupby(["reporter_code", "year", "driver_category"], as_index=False).agg(
             contribution=("growth_contribution", "sum"),
             base_value=("base_value", "sum"),
@@ -5627,22 +7645,28 @@ def product_scope_states(product_partner: pd.DataFrame) -> pd.DataFrame:
     product_partner = drop_excluded_hs6(product_partner)
     if product_partner.empty:
         return pd.DataFrame()
-    product_partner["product_identity"] = product_partner["classification_code"] + ":" + product_partner["cmd_code"].astype(str)
     regions = partner_region_table(product_partner["partner_code"].unique())
-    pp = product_partner.merge(regions[["partner_code", "partner_region"]], on="partner_code", how="left")
-    pp["partner_region"] = pp["partner_region"].fillna("Unknown")
-    pp["unknown_partner_region_value"] = np.where(pp["partner_region"] == "Unknown", pp["trade_value"], 0.0)
-    scope = pp.groupby(["reporter_code", "year", "classification_code", "cmd_code", "product_identity"], as_index=False).agg(
+    region_lookup = regions.set_index("partner_code")["partner_region"].to_dict() if not regions.empty else {}
+    source_lookup = regions.set_index("partner_code")["partner_region_source"].to_dict() if not regions.empty else {}
+    product_partner["partner_region"] = product_partner["partner_code"].map(region_lookup).fillna("Unknown")
+    product_partner["partner_region_source"] = product_partner["partner_code"].map(source_lookup).fillna("unknown_no_world_bank_match")
+    product_partner["unknown_partner_region_value"] = np.where(product_partner["partner_region"] == "Unknown", product_partner["trade_value"], 0.0)
+    product_partner["world_bank_partner_region_value"] = np.where(product_partner["partner_region_source"] == "world_bank", product_partner["trade_value"], 0.0)
+    scope = product_partner.groupby(["reporter_code", "year", "classification_code", "cmd_code"], as_index=False).agg(
         destination_count=("partner_code", "nunique"),
         partner_region_count=("partner_region", "nunique"),
+        partner_region_source_count=("partner_region_source", "nunique"),
         product_export_value=("trade_value", "sum"),
         unknown_partner_region_value=("unknown_partner_region_value", "sum"),
+        world_bank_partner_region_value=("world_bank_partner_region_value", "sum"),
     )
+    scope["product_identity"] = scope["classification_code"] + ":" + scope["cmd_code"].astype(str)
     scope["unknown_partner_region_share"] = scope["unknown_partner_region_value"] / scope["product_export_value"].replace(0, np.nan)
+    scope["world_bank_partner_region_share"] = scope["world_bank_partner_region_value"] / scope["product_export_value"].replace(0, np.nan)
     scope["region_transition_reliability"] = np.where(
         scope["unknown_partner_region_share"] > 0.20,
         "low_unknown_region_gt_20pct",
-        "usable",
+        "usable_world_bank_region",
     )
     scope["destination_state"] = np.where(scope["destination_count"] <= 1, "single_destination", "multi_destination")
     scope["region_state"] = np.where(scope["partner_region_count"] <= 1, "single_partner_region", "multi_region_global")
@@ -5662,13 +7686,14 @@ def run_exercise_12_from_aggregates(
     gross_rows = []
     transition_rows = []
     diagnostic_rows = []
+    harmonization_diagnostic_rows = []
     values_out = []
     cpa_mapping = load_btige_cpa_mapping()
     for dimension, values in values_by_dimension.items():
         values = values.copy()
         values["dimension"] = dimension
         values_out.append(values)
-        net, gross, transitions, diagnostics = exercise_12_accounting_outputs_for_values(
+        net, gross, transitions, diagnostics, harmonization_diagnostics = exercise_12_accounting_outputs_for_values(
             values,
             dimension,
             horizons,
@@ -5682,6 +7707,8 @@ def run_exercise_12_from_aggregates(
             transition_rows.append(transitions)
         if not diagnostics.empty:
             diagnostic_rows.append(diagnostics)
+        if not harmonization_diagnostics.empty:
+            harmonization_diagnostic_rows.append(harmonization_diagnostics)
 
     all_values = pd.concat(values_out, ignore_index=True)
     all_values = add_country_metadata(all_values)
@@ -5691,6 +7718,9 @@ def run_exercise_12_from_aggregates(
     gross_decomposition = pd.concat(gross_rows, ignore_index=True) if gross_rows else pd.DataFrame()
     size_transitions = pd.concat(transition_rows, ignore_index=True) if transition_rows else pd.DataFrame()
     hs_diagnostics = pd.concat(diagnostic_rows, ignore_index=True) if diagnostic_rows else pd.DataFrame()
+    hs_harmonization_diagnostics = (
+        pd.concat(harmonization_diagnostic_rows, ignore_index=True) if harmonization_diagnostic_rows else pd.DataFrame()
+    )
 
     if not decomposition.empty:
         decomposition = add_country_metadata(decomposition)
@@ -5701,14 +7731,12 @@ def run_exercise_12_from_aggregates(
     if not hs_diagnostics.empty:
         hs_diagnostics = add_country_metadata(hs_diagnostics)
 
-    main_decomposition = decomposition[
-        (decomposition["top_definition"] == "top_10")
-        & (decomposition["item_id_mode"].isin(["hs6_revision", "partner"]))
-    ].copy() if not decomposition.empty else decomposition
+    main_decomposition = exercise_12_headline_decomposition(decomposition) if not decomposition.empty else decomposition
     decomposition.to_csv(EX12_TABLES / "growth_decomposition_net.csv", index=False)
     gross_decomposition.to_csv(EX12_TABLES / "growth_decomposition_gross.csv", index=False)
     size_transitions.to_csv(EX12_TABLES / "transition_matrices_detailed.csv", index=False)
     hs_diagnostics.to_csv(EX12_TABLES / "hs_revision_pair_diagnostics.csv", index=False)
+    hs_harmonization_diagnostics.to_csv(EX12_TABLES / "hs_harmonization_diagnostics.csv", index=False)
     main_decomposition.to_parquet(sample_processed_path("exercise_12_growth_decomposition.parquet"), index=False)
     main_decomposition.to_csv(EX12_TABLES / "growth_decomposition.csv", index=False)
     size_transitions.to_csv(EX12_TABLES / "size_transition_matrices.csv", index=False)
@@ -5733,6 +7761,7 @@ def run_exercise_12_from_aggregates(
         source_details or {},
         gross_decomposition=gross_decomposition,
         hs_diagnostics=hs_diagnostics,
+        hs_harmonization_diagnostics=hs_harmonization_diagnostics,
     )
     return main_decomposition
 
@@ -5822,28 +7851,46 @@ def write_exercise_12_memo(
     source_details: dict,
     gross_decomposition: pd.DataFrame | None = None,
     hs_diagnostics: pd.DataFrame | None = None,
+    hs_harmonization_diagnostics: pd.DataFrame | None = None,
 ) -> None:
     summary = (
-        decomposition.groupby(["dimension", "horizon", "driver_category"], as_index=False)["contribution_share"].median().round(4)
+        decomposition.groupby(["dimension", "horizon", "item_id_mode", "top_definition", "driver_category"], as_index=False)["contribution_share"]
+        .median()
+        .round(4)
         if not decomposition.empty
         else pd.DataFrame()
     )
-    gross_summary = (
-        gross_decomposition.groupby(["dimension", "horizon", "accounting_type", "driver_category"], as_index=False)["contribution_share"].median().round(4)
+    gross_headline = (
+        exercise_12_headline_decomposition(gross_decomposition)
         if gross_decomposition is not None and not gross_decomposition.empty
         else pd.DataFrame()
     )
+    gross_summary = (
+        gross_headline.groupby(["dimension", "horizon", "item_id_mode", "top_definition", "accounting_type", "driver_category"], as_index=False)[
+            "contribution_share"
+        ]
+        .median()
+        .round(4)
+        if not gross_headline.empty
+        else pd.DataFrame()
+    )
     hs_rows = len(hs_diagnostics) if hs_diagnostics is not None else 0
+    hs_harmonization_rows = len(hs_harmonization_diagnostics) if hs_harmonization_diagnostics is not None else 0
     hs_value = (
         float(hs_diagnostics["excluded_base_value"].sum())
         if hs_diagnostics is not None and not hs_diagnostics.empty and "excluded_base_value" in hs_diagnostics.columns
         else 0.0
     )
+    gross_all_rows = len(gross_decomposition) if gross_decomposition is not None else 0
     memo = f"""# Exercise 12: Export Transition Exercise
 
 Generated: {now_utc()}
 
-This memo is an accounting exercise, not a regression. It separates where export growth came from: existing top items, existing non-top items, new items, and contractions.
+This memo is an accounting exercise, not a regression. It separates where export growth came from: existing top items, strict zero entrants, low-base growers, other existing non-top items, and contractions.
+
+The headline product and product-partner-cell rows use `hs6_harmonized_family + top_10`; partner rows use `partner + top_10`. Other item modes and top definitions remain in the full CSV outputs as diagnostics and robustness checks.
+
+Low-base growth categories are ordered to avoid double counting. `strict_new_item` means base-year value is zero and future value is positive. `low_base_under_10k_grower` means the item was not a base-year top item, had positive base exports below ${EX12_LOW_BASE_VALUE_USD:,.0f}, and grew by the future year. `least_traded_10pct_grower` means the item was not already classified above, was not a base-year top item, belonged to the least-traded base-year basket accounting for the bottom {EX12_LEAST_TRADED_BASE_SHARE:.0%} of base exports, and grew by the future year.
 
 ## Coverage
 
@@ -5851,7 +7898,10 @@ This memo is an accounting exercise, not a regression. It separates where export
 - Size transition rows: {len(size_transitions)}
 - Product destination/region transition rows: {len(scope_transitions)}
 - HS cross-revision diagnostic rows: {hs_rows}
-- Excluded base value in HS cross-revision diagnostics: {hs_value:,.0f}
+- HS harmonization diagnostic rows: {hs_harmonization_rows}
+- Excluded base value in old same-revision HS diagnostics: {hs_value:,.0f}
+- Gross decomposition rows in full CSV: {gross_all_rows}
+- Gross decomposition rows in headline memo sample: {len(gross_headline)}
 - Source details: `{json.dumps(source_details, sort_keys=True)}`
 
 ## Median Net Contribution Shares
@@ -5864,27 +7914,28 @@ This memo is an accounting exercise, not a regression. It separates where export
 
 ## Interpretation Limits
 
-The main HS6 product transition is conservative: product comparisons across different HS revisions are excluded and reported in `hs_revision_pair_diagnostics.csv`. HS4, HS2, and CPA-sector outputs are robustness views for product-code instability, not replacements for HS6 detail.
+The main HS6 product transition now uses the official Harvard Growth Lab / Dataverse weighted conversion tables motivated by Lukaszuk and Torun (2022), "Harmonizing the Harmonized System." Source HS6 revision-code values are multiplied by their LT/HGL conversion weights and aggregated to HS1992/H0 before product-dependent decomposition. HS6 `999999` is excluded before conversion. The old same-revision HS6 diagnostic is retained in `hs_revision_pair_diagnostics.csv` for comparison; harmonization coverage is reported in `hs_harmonization_diagnostics.csv`. HS4, HS2, and CPA-sector outputs are robustness views for product-code instability, not replacements for LT/HGL HS1992 product detail.
 
-Net growth can hide churn, so the gross table should be read alongside the net table. Gross positive growth shows expanding/new items; gross contraction shows shrinking or exiting items.
+Net growth can hide churn, so the gross table should be read alongside the net table. Gross positive growth shows expanding, strict-new, and low-base growing items; gross contraction shows shrinking or exiting items. The median gross table above is filtered to the same headline sample as the net table and keeps `item_id_mode` and `top_definition` visible.
 
 Destination and region transitions remain descriptive. The state table reports `unknown_partner_region_share` and `region_transition_reliability`; region-transition claims should be discounted when the unknown-region share is high.
 
 ## Files
 
-- Tables: `results/exercise_12_tables/`
-- Figures: `results/exercise_12_figures/`
-- Processed data: `data/processed/exercise_12_growth_decomposition.parquet`
-- Net decomposition: `results/exercise_12_tables/growth_decomposition_net.csv`
-- Gross decomposition: `results/exercise_12_tables/growth_decomposition_gross.csv`
-- Detailed transitions: `results/exercise_12_tables/transition_matrices_detailed.csv`
-- HS revision diagnostics: `results/exercise_12_tables/hs_revision_pair_diagnostics.csv`
+- Tables: `{EX12_TABLES.relative_to(ROOT)}/`
+- Figures: `{EX12_FIGURES.relative_to(ROOT)}/`
+- Processed data: `{sample_processed_path("exercise_12_growth_decomposition.parquet").relative_to(ROOT)}`
+- Net decomposition: `{(EX12_TABLES / "growth_decomposition_net.csv").relative_to(ROOT)}`
+- Gross decomposition: `{(EX12_TABLES / "growth_decomposition_gross.csv").relative_to(ROOT)}`
+- Detailed transitions: `{(EX12_TABLES / "transition_matrices_detailed.csv").relative_to(ROOT)}`
+- HS revision diagnostics: `{(EX12_TABLES / "hs_revision_pair_diagnostics.csv").relative_to(ROOT)}`
+- HS harmonization diagnostics: `{(EX12_TABLES / "hs_harmonization_diagnostics.csv").relative_to(ROOT)}`
 
 ## Discussion Prompt
 
-Does future export growth mostly come from already-top items, smaller incumbents, or new product/partner cells?
+Does future export growth mostly come from already-top items, strict zero entrants, low-base growers, or other incumbents?
 """
-    write_text(RESULTS / "exercise_12_export_transitions.md", memo)
+    write_text(sample_results_dir() / "exercise_12_export_transitions.md", memo)
 
 
 def run_exercise_06(leaf: pd.DataFrame) -> pd.DataFrame:
@@ -6016,7 +8067,8 @@ def expected_dirichlet_top_share(active_items: int, top_n: int) -> float:
 
 
 def dimension_values_for_benchmark(leaf: pd.DataFrame, dimension: str) -> pd.DataFrame:
-    leaf = drop_excluded_hs6(leaf)
+    if dimension in {"product", "product_partner_cell"}:
+        leaf = drop_excluded_hs6(leaf)
     item_cols = EX10_DIMENSIONS[dimension]
     group_cols = ["reporter_code", "year", "flow", *item_cols]
     return leaf.groupby(group_cols, as_index=False)["trade_value"].sum()
@@ -6213,11 +8265,12 @@ def run_exercise_10_streaming(
         },
     )
     write_json(
-        RESULTS / "run_manifest.json",
+        sample_results_dir() / "run_manifest_exercise_10.json",
         {
             "created_at_utc": now_utc(),
             "mode": "exercise_10_streaming",
             "exercise": "10",
+            "country_sample": active_sample_name(),
             "hs_bulk_files_seen": len(files),
             "hs_bulk_files_with_rows": files_with_rows,
             "partial_download_files_present": len(part_files),
@@ -6337,6 +8390,8 @@ def make_exercise_10_figures(df: pd.DataFrame) -> None:
 
 
 def write_exercise_10_memo(df: pd.DataFrame) -> None:
+    results_root = sample_results_dir()
+    processed_path = sample_processed_path("random_benchmark_all_years.parquet")
     med = df.groupby(["dimension", "flow"])[
         ["actual_gini", "sim_gini_median", "actual_minus_sim_median_gini", "actual_gini_percentile"]
     ].median().round(3)
@@ -6378,19 +8433,19 @@ This memo is intentionally descriptive. `exercises.md` should only be updated af
 - Preserves each country-year-flow active item count within the benchmarked dimension.
 - Uses a symmetric Dirichlet random-allocation null, implemented as exponential random weights normalized to the observed total.
 - Does not use naive relabeling, because relabeling preserves the same Gini by construction.
-- Large active-count groups can reuse a nearby/capped simulation count with analytic centering for Gini and top-share expectations; see `results/exercise_10_tables/benchmark_validation.json`.
+- Large active-count groups can reuse a nearby/capped simulation count with analytic centering for Gini and top-share expectations; see `{(EX10_TABLES / "benchmark_validation.json").relative_to(ROOT)}`.
 
 ## Files
 
-- Tables: `results/exercise_10_tables/`
-- Figures: `results/exercise_10_figures/`
-- Processed data: `data/processed/random_benchmark_all_years.parquet`
+- Tables: `{EX10_TABLES.relative_to(ROOT)}/`
+- Figures: `{EX10_FIGURES.relative_to(ROOT)}/`
+- Processed data: `{processed_path.relative_to(ROOT)}`
 
 ## Discussion Prompt
 
 Is actual concentration still unusually high after preserving scale and sparsity, or is much of it explained by random allocation over a sparse set of active products, partners, and cells?
 """
-    write_text(RESULTS / "exercise_10_random_benchmark.md", memo)
+    write_text(results_root / "exercise_10_random_benchmark.md", memo)
 
 
 def validate_benchmark(
@@ -6416,6 +8471,7 @@ def validate_benchmark(
     )
     check = {
         "created_at_utc": now_utc(),
+        "country_sample": active_sample_name(),
         "seed": seed,
         "simulations": simulations,
         "rows": int(len(out)),
@@ -6436,7 +8492,7 @@ def validate_benchmark(
 def load_or_collect_leaf(args: argparse.Namespace) -> pd.DataFrame:
     leaf_path = sample_processed_path("hs6_partner_leaf_trade_all_years.parquet")
     if leaf_path.exists() and not args.reprocess_raw:
-        return drop_excluded_hs6(pd.read_parquet(leaf_path))
+        return pd.read_parquet(leaf_path)
     return collect_leaf_data()
 
 
@@ -6503,8 +8559,8 @@ def run_all(args: argparse.Namespace) -> None:
     if args.approve_bec5_mapping:
         approve_bec5_mapping()
         return
-    if args.finalize_only and args.exercise not in {"3", "4", "11"}:
-        raise RuntimeError("--finalize-only is only supported with --exercise 3, --exercise 4, or --exercise 11.")
+    if args.finalize_only and args.exercise not in {"2", "3", "4", "11"}:
+        raise RuntimeError("--finalize-only is only supported with --exercise 2, --exercise 3, --exercise 4, or --exercise 11.")
 
     save_country_panel()
     if args.stage in {"process", "all"} and can_reuse_exercise_outputs(args) and exercise_outputs_available(args.exercise):
@@ -6524,9 +8580,12 @@ def run_all(args: argparse.Namespace) -> None:
     subscription_key = get_key(args)
     if args.stage in {"download", "all"}:
         local_files = hs_bulk_files(max_files=args.max_files)
-        if args.stage == "all" and local_files and not args.refresh_availability:
+        missing_keys = missing_bulk_keys_for_active_sample(local_files)
+        if args.stage == "all" and local_files and not missing_keys and not args.refresh_availability:
             print(f"Skipping download: {len(local_files)} matching local Comtrade bulk files are already available.", flush=True)
         else:
+            if missing_keys:
+                print(f"Need {len(missing_keys)} additional Comtrade bulk files for sample {active_sample_name()}.", flush=True)
             if not check_comtrade_access(subscription_key):
                 return
             availability = download_availability(subscription_key)
@@ -6540,6 +8599,24 @@ def run_all(args: argparse.Namespace) -> None:
             )
 
     if args.stage in {"process", "all"}:
+        if args.stage == "process" and args.max_files is None:
+            missing_keys = missing_bulk_keys_for_active_sample()
+            if missing_keys:
+                examples = [
+                    {"reporter_code": reporter_code, "year": year, "classification_code": classification_code}
+                    for reporter_code, year, classification_code in sorted(missing_keys)[:25]
+                ]
+                write_blocker(
+                    f"Missing {len(missing_keys)} required Comtrade bulk reporter-year-classification files for "
+                    f"country sample {active_sample_name()}; refusing to process a partial sample.",
+                    {
+                        "country_sample": active_sample_name(),
+                        "missing_bulk_file_count": int(len(missing_keys)),
+                        "example_missing_keys": examples,
+                        "next_step": "Set COMTRADE_SUBSCRIPTION_KEY and run --stage all or --stage download before full processing.",
+                    },
+                )
+                return
         if args.exercise == "all":
             if args.keep_leaf:
                 leaf = load_or_collect_leaf(args)
@@ -6598,8 +8675,13 @@ def run_all(args: argparse.Namespace) -> None:
             run_exercise_01_streaming()
             mark_exercise_outputs_complete("1", details={"mode": "exercise_01_streaming"})
         elif args.exercise == "2":
-            run_exercise_02_streaming(max_files=args.max_files)
-            mark_exercise_outputs_complete("2", details={"mode": "exercise_02_streaming"})
+            run_exercise_02_streaming(
+                max_files=args.max_files,
+                fresh_checkpoints=args.fresh_checkpoints,
+                finalize_only=args.finalize_only,
+                chunk_rows=args.chunk_rows,
+            )
+            mark_exercise_outputs_complete("2", details={"mode": "exercise_02_checkpointed"})
         elif args.exercise == "3":
             run_exercise_03_streaming(
                 max_files=args.max_files,
@@ -6662,8 +8744,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         help="Promote the reviewed Exercise 3 BEC mapping candidate to the approved mapping required by Exercise 3.",
     )
     parser.add_argument("--subscription-key", default=None, help="UN Comtrade subscription key. Defaults to COMTRADE_SUBSCRIPTION_KEY.")
-    parser.add_argument("--country-sample", choices=COUNTRY_SAMPLE_CHOICES, default="prof_p_33", help="Reporter sample to use for downloads, raw-file filtering, and country metadata.")
-    parser.add_argument("--min-available-years", type=int, default=10, help="Minimum annual HS years required for the world_broad sample.")
+    parser.add_argument("--country-sample", choices=COUNTRY_SAMPLE_CHOICES, default="rd2_countries", help="Reporter sample to use for downloads, raw-file filtering, and country metadata.")
+    parser.add_argument(
+        "--min-available-years",
+        type=int,
+        default=10,
+        help="Minimum annual HS years required for broad samples. cadot_broad_156 fixes this at 19.",
+    )
     parser.add_argument("--start-year", type=int, default=1988, help="Earliest annual HS year included in sample eligibility and raw-file processing.")
     parser.add_argument("--end-year", type=int, default=None, help="Latest annual HS year included in sample eligibility and raw-file processing.")
     parser.add_argument("--refresh-availability", action="store_true", help="Refresh Comtrade reporter and availability metadata instead of using local caches.")
@@ -6676,9 +8763,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--reprocess-raw", action="store_true", help="Re-read raw Comtrade files even if processed parquet exists.")
     parser.add_argument("--keep-leaf", action="store_true", help="Store all HS6 partner records in one parquet; off by default to avoid high memory use.")
     parser.add_argument("--max-files", type=int, default=None, help="Debug option for processing; process only the first N HS bulk files.")
-    parser.add_argument("--fresh-checkpoints", action="store_true", help="Rebuild Exercise 3/4/11 per-file checkpoint parquet files before finalizing.")
-    parser.add_argument("--finalize-only", action="store_true", help="Finalize Exercise 3/4/11 from existing checkpoint parquet files without reading raw Comtrade files.")
-    parser.add_argument("--chunk-rows", type=int, default=DEFAULT_CHUNK_ROWS, help="Raw Comtrade rows per chunk for Exercise 3/4/11 checkpoint creation.")
+    parser.add_argument("--fresh-checkpoints", action="store_true", help="Rebuild Exercise 2/3/4/11 per-file checkpoint parquet files before finalizing.")
+    parser.add_argument("--finalize-only", action="store_true", help="Finalize Exercise 2/3/4/11 from existing checkpoint parquet files without reading raw Comtrade files.")
+    parser.add_argument("--chunk-rows", type=int, default=DEFAULT_CHUNK_ROWS, help="Raw Comtrade rows per chunk for Exercise 2/3/4/11 checkpoint creation.")
     parser.add_argument("--memory-limit-gb", type=float, default=None, help="Optional process address-space cap to prevent laptop-wide memory exhaustion.")
     parser.add_argument(
         "--benchmark-exact-max-items",

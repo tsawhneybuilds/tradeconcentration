@@ -8,8 +8,11 @@ This uses existing checkpoints:
 
 from __future__ import annotations
 
+import hashlib
 import json
+import sys
 import textwrap
+from datetime import datetime, timezone
 from pathlib import Path
 
 import matplotlib.pyplot as plt
@@ -18,6 +21,8 @@ import pandas as pd
 import pyarrow.dataset as ds
 import seaborn as sns
 from matplotlib.ticker import PercentFormatter
+
+from concentration_metrics import active_gini
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,24 +62,16 @@ PRODUCT_LABEL_OVERRIDES = {
 }
 
 FREQUENCY_TOP_N = 20
+EXCLUDED_HS6_CODES = {"999999"}
+OUT_MANIFEST = RESULTS / "run_manifest_top5_trade_concentration.json"
 
 
 def strip_hs_code(description: str) -> str:
     return description.split(" - ", 1)[1] if " - " in description else description
 
 
-def gini(values: pd.Series | np.ndarray | list[float]) -> float:
-    arr = np.asarray(values, dtype=float)
-    arr = arr[np.isfinite(arr) & (arr > 0)]
-    if arr.size == 0:
-        return np.nan
-    arr.sort()
-    total = arr.sum()
-    if total <= 0:
-        return np.nan
-    n = arr.size
-    idx = np.arange(1, n + 1)
-    return float((2 * np.sum(idx * arr) / (n * total)) - ((n + 1) / n))
+# Keep the legacy local name; this is active-positive by design.
+gini = active_gini
 
 
 def load_product_descriptions() -> tuple[dict[tuple[str, str], str], dict[str, str]]:
@@ -105,6 +102,34 @@ def product_name(classification_code: object, cmd_code: object, by_class: dict[t
     label = by_class.get((classification, code), fallback.get(code, code))
     label = " ".join(label.replace(";", ":").split())
     return textwrap.shorten(label, width=95, placeholder="...")
+
+
+def normalize_product_code(series: pd.Series) -> pd.Series:
+    return series.astype(str).str.extract(r"(\d{1,6})", expand=False).str.zfill(6)
+
+
+def drop_excluded_product_codes(values: pd.DataFrame, code_col: str = "cmd_code") -> pd.DataFrame:
+    if values.empty or code_col not in values.columns:
+        return values
+    out = values.copy()
+    out[code_col] = normalize_product_code(out[code_col])
+    return out.loc[~out[code_col].isin(EXCLUDED_HS6_CODES)].copy()
+
+
+def excluded_product_rows(frame: pd.DataFrame, code_col: str = "item_code") -> int:
+    if frame.empty or code_col not in frame.columns:
+        return 0
+    if "dimension" in frame.columns:
+        mask = frame["dimension"].eq("product")
+    else:
+        mask = pd.Series(True, index=frame.index)
+    return int((mask & normalize_product_code(frame[code_col]).isin(EXCLUDED_HS6_CODES)).sum())
+
+
+def assert_no_excluded_products(frame: pd.DataFrame, label: str, code_col: str = "item_code") -> None:
+    count = excluded_product_rows(frame, code_col=code_col)
+    if count:
+        raise RuntimeError(f"{label} contains {count:,} HS6 999999 product rows.")
 
 
 def load_partner_lookup() -> dict[int, str]:
@@ -173,6 +198,8 @@ def top5_from_values(
 ) -> pd.DataFrame:
     needed = ["reporter_code", "year", "trade_value", *item_cols]
     values = values[needed].copy()
+    if dimension == "product" and "cmd_code" in values.columns:
+        values = drop_excluded_product_codes(values, code_col="cmd_code")
     values["trade_value"] = pd.to_numeric(values["trade_value"], errors="coerce")
     values = values.dropna(subset=["reporter_code", "year", "trade_value", *item_cols])
     values = values[values["trade_value"] > 0].copy()
@@ -219,6 +246,7 @@ def import_top5(
     rows: list[pd.DataFrame] = []
     for idx, path in enumerate(files, start=1):
         df = pd.read_parquet(path, columns=["reporter_code", "year", "cmd_code", "partner_code", "trade_value"])
+        df = drop_excluded_product_codes(df, code_col="cmd_code")
         rows.append(
             top5_from_values(
                 df,
@@ -347,6 +375,7 @@ def latest_import_dimension_values(latest_summary: pd.DataFrame) -> pd.DataFrame
         year = int(df["year"].iloc[0])
         if (reporter, year) not in key_set:
             continue
+        df = drop_excluded_product_codes(df, code_col="cmd_code")
         product = df.groupby(["reporter_code", "year", "cmd_code"], as_index=False)["trade_value"].sum()
         product = product.rename(columns={"cmd_code": "item_code"})
         product["dimension"] = "product"
@@ -375,6 +404,8 @@ def latest_export_dimension_values(latest_summary: pd.DataFrame) -> pd.DataFrame
         values["dimension"] = dimension
         keep = keys[keys["dimension"].eq(dimension)][["reporter_code", "year"]]
         values = values.merge(keep, on=["reporter_code", "year"], how="inner")
+        if dimension == "product":
+            values = drop_excluded_product_codes(values, code_col=item_col)
         values = values.groupby(["reporter_code", "year", item_col], as_index=False)["trade_value"].sum()
         values = values.rename(columns={item_col: "item_code"})
         values["dimension"] = dimension
@@ -399,6 +430,9 @@ def latest_dimension_values(latest_summary: pd.DataFrame) -> pd.DataFrame:
         normalize_item_code(values["item_code"], "product"),
         normalize_item_code(values["item_code"], "partner"),
     )
+    values = values.loc[
+        ~(values["dimension"].eq("product") & values["item_code"].isin(EXCLUDED_HS6_CODES))
+    ].copy()
     return values
 
 
@@ -865,6 +899,95 @@ def write_memo(
     (RESULTS / "exercise_01_top5_trade_concentration.md").write_text("\n".join(lines) + "\n")
 
 
+def relative_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(ROOT))
+    except ValueError:
+        return str(path)
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def source_file_manifest(path: Path) -> dict[str, object]:
+    return {
+        "path": relative_path(path),
+        "exists": path.exists(),
+        "size_bytes": int(path.stat().st_size) if path.exists() else None,
+        "mtime_utc": datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat(timespec="seconds")
+        if path.exists()
+        else None,
+        "sha256": file_sha256(path) if path.exists() else None,
+    }
+
+
+def source_dir_manifest(path: Path) -> dict[str, object]:
+    files = sorted(path.glob("*.parquet")) if path.exists() else []
+    latest_mtime = max((file.stat().st_mtime for file in files), default=None)
+    return {
+        "path": relative_path(path),
+        "exists": path.exists(),
+        "parquet_files": len(files),
+        "latest_mtime_utc": datetime.fromtimestamp(latest_mtime, timezone.utc).isoformat(timespec="seconds")
+        if latest_mtime
+        else None,
+    }
+
+
+def write_run_manifest(
+    top5: pd.DataFrame,
+    summary: pd.DataFrame,
+    latest_items: pd.DataFrame,
+    latest_frequency: pd.DataFrame,
+    latest_loo: pd.DataFrame,
+    figures: list[Path],
+) -> None:
+    manifest = {
+        "created_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "command": " ".join([Path(sys.executable).name, *sys.argv]),
+        "excluded_hs6_codes": sorted(EXCLUDED_HS6_CODES),
+        "hs6_999999_rows": {
+            "top5_items": excluded_product_rows(top5),
+            "latest_items": excluded_product_rows(latest_items),
+            "latest_frequency": excluded_product_rows(latest_frequency),
+            "latest_leave_one_out": excluded_product_rows(latest_loo),
+        },
+        "row_counts": {
+            "top5_items": int(len(top5)),
+            "summary": int(len(summary)),
+            "latest_items": int(len(latest_items)),
+            "latest_frequency": int(len(latest_frequency)),
+            "latest_leave_one_out": int(len(latest_loo)),
+        },
+        "source_artifacts": {
+            "import_aggregates": source_dir_manifest(IMPORT_AGG_DIR),
+            "export_aggregates": source_file_manifest(EXPORT_AGG_PATH),
+            "country_panel": source_file_manifest(COUNTRY_PANEL_PATH),
+            "concentration_all_years": source_file_manifest(CONCENTRATION_PATH),
+        },
+        "outputs": {
+            "processed_top5_items": relative_path(DATA_PROCESSED / "top5_trade_concentration_items.parquet"),
+            "processed_summary": relative_path(DATA_PROCESSED / "top5_trade_concentration_summary.parquet"),
+            "tables": relative_path(EX01_TABLES),
+            "figures": [relative_path(path) for path in figures],
+            "memo": relative_path(RESULTS / "exercise_01_top5_trade_concentration.md"),
+        },
+        "notes": [
+            "HS6 999999 is excluded from product and partner top-five computations before aggregation and ranking.",
+            "Export partner aggregates depend on the canonical Exercise 2/12 aggregate, which excludes HS6 999999 upstream.",
+        ],
+        "exercises_md_updated": False,
+    }
+    if any(int(value) != 0 for value in manifest["hs6_999999_rows"].values()):
+        raise RuntimeError(f"Top-five manifest found excluded HS6 rows: {manifest['hs6_999999_rows']}")
+    OUT_MANIFEST.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
 def main() -> None:
     EX01_TABLES.mkdir(parents=True, exist_ok=True)
     DATA_PROCESSED.mkdir(parents=True, exist_ok=True)
@@ -887,6 +1010,13 @@ def main() -> None:
     print("Computing latest-year leave-one-out Gini contributions for common top-five items...", flush=True)
     latest_values = latest_dimension_values(latest_summary)
     latest_loo = build_latest_item_leave_one_out(latest_values, latest_items, latest_frequency)
+    for label, frame in {
+        "top5": top5,
+        "latest_items": latest_items,
+        "latest_frequency": latest_frequency,
+        "latest_leave_one_out": latest_loo,
+    }.items():
+        assert_no_excluded_products(frame, label)
 
     top5.to_parquet(DATA_PROCESSED / "top5_trade_concentration_items.parquet", index=False)
     summary.to_parquet(DATA_PROCESSED / "top5_trade_concentration_summary.parquet", index=False)
@@ -917,12 +1047,21 @@ def main() -> None:
         "top5_item_leave_one_out_latest_top5_reporters.png",
     )
     write_memo(summary, top5, cumulative_fig, rank_fig, latest_frequency, frequency_fig, latest_loo, loo_all_fig, loo_top5_fig)
+    write_run_manifest(
+        top5,
+        summary,
+        latest_items,
+        latest_frequency,
+        latest_loo,
+        [cumulative_fig, rank_fig, frequency_fig, loo_all_fig, loo_top5_fig],
+    )
     print(f"Wrote {len(top5):,} top-five item rows and {len(summary):,} country-year-flow-dimension summaries.", flush=True)
     print(f"Wrote {cumulative_fig.relative_to(ROOT)}", flush=True)
     print(f"Wrote {rank_fig.relative_to(ROOT)}", flush=True)
     print(f"Wrote {frequency_fig.relative_to(ROOT)}", flush=True)
     print(f"Wrote {loo_all_fig.relative_to(ROOT)}", flush=True)
     print(f"Wrote {loo_top5_fig.relative_to(ROOT)}", flush=True)
+    print(f"Wrote {OUT_MANIFEST.relative_to(ROOT)}", flush=True)
 
 
 if __name__ == "__main__":

@@ -33,15 +33,18 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from trade_concentration_pipeline import (
+    COUNTRY_SAMPLE_CHOICES,
     EX10_FIGURES,
     EX10_TABLES,
     RESULTS,
+    active_sample_name,
+    bulk_file_metadata,
     configure_country_sample,
     drop_excluded_hs6,
     extract_leaf_trade,
     gini,
     hs_bulk_files,
-    read_comtrade_file,
+    iter_comtrade_file_chunks,
     save_country_panel,
     sample_processed_path,
     sample_results_dir,
@@ -56,6 +59,9 @@ TOP_METRICS = {
     "top_10pct_share": ("pct", 0.10),
     "top_200_share": ("n", 200),
 }
+DEFAULT_CHUNK_ROWS = 25_000
+BENCHMARK_GROUP_COLS = ["reporter_code", "year", "flow", "hs2", "cmd_code"]
+EXPECTED_FLOWS = ("Exports", "Imports")
 
 HS2_LABELS = {
     "27": "mineral fuels/oil/petroleum",
@@ -271,6 +277,52 @@ def load_done_keys(path: Path) -> set[tuple[int, int, str]]:
     return {(int(r.reporter_code), int(r.year), str(r.flow)) for r in done.itertuples(index=False)}
 
 
+def raw_file_groups_done(path: Path, done: set[tuple[int, int, str]]) -> bool:
+    metadata = bulk_file_metadata(path)
+    if metadata is None:
+        return False
+    reporter_code = int(metadata["reporter_code"])
+    year = int(metadata["year"])
+    return all((reporter_code, year, flow) in done for flow in EXPECTED_FLOWS)
+
+
+def aggregate_leaf_trade_for_benchmark(path: Path, chunk_rows: int, excluded_hs2: list[str]) -> pd.DataFrame:
+    pieces: list[pd.DataFrame] = []
+    for raw in iter_comtrade_file_chunks(path, chunk_rows=chunk_rows, leaf_columns_only=True):
+        leaf = extract_leaf_trade(raw)
+        leaf = drop_excluded_hs6(leaf)
+        if leaf.empty:
+            continue
+        if excluded_hs2:
+            leaf = leaf[~leaf["hs2"].isin(excluded_hs2)].copy()
+            if leaf.empty:
+                continue
+        leaf = leaf.dropna(subset=[*BENCHMARK_GROUP_COLS, "trade_value"]).copy()
+        if leaf.empty:
+            continue
+        leaf["reporter_code"] = pd.to_numeric(leaf["reporter_code"], errors="coerce")
+        leaf["year"] = pd.to_numeric(leaf["year"], errors="coerce")
+        leaf["trade_value"] = pd.to_numeric(leaf["trade_value"], errors="coerce")
+        leaf = leaf.dropna(subset=["reporter_code", "year", "trade_value"])
+        leaf = leaf[leaf["trade_value"] > 0].copy()
+        if leaf.empty:
+            continue
+        leaf["reporter_code"] = leaf["reporter_code"].astype(int)
+        leaf["year"] = leaf["year"].astype(int)
+        leaf["flow"] = leaf["flow"].astype(str)
+        leaf["hs2"] = leaf["hs2"].astype(str).str.zfill(2).str[:2]
+        leaf["cmd_code"] = leaf["cmd_code"].astype(str).str.zfill(6)
+        pieces.append(leaf.groupby(BENCHMARK_GROUP_COLS, as_index=False)["trade_value"].sum())
+
+    if not pieces:
+        return pd.DataFrame(columns=[*BENCHMARK_GROUP_COLS, "trade_value"])
+    return (
+        pd.concat(pieces, ignore_index=True)
+        .groupby(BENCHMARK_GROUP_COLS, as_index=False)["trade_value"]
+        .sum()
+    )
+
+
 def collect_and_simulate(
     simulations: int,
     seed: int,
@@ -278,6 +330,7 @@ def collect_and_simulate(
     paths: BenchmarkPaths,
     excluded_hs2: list[str],
     output_tag: str | None,
+    chunk_rows: int,
     max_files: int | None = None,
 ) -> pd.DataFrame:
     files = hs_bulk_files(max_files=max_files)
@@ -291,15 +344,14 @@ def collect_and_simulate(
     processed_groups = 0
 
     for idx, path in enumerate(files, start=1):
+        if raw_file_groups_done(path, done):
+            if idx % 100 == 0:
+                print(f"[{idx}/{len(files)}] skip completed Exercise 10 groups for {path.name}", flush=True)
+            continue
         print(f"[{idx}/{len(files)}] HS2-preserving Exercise 10 from {path.name}", flush=True)
-        leaf = extract_leaf_trade(read_comtrade_file(path))
-        leaf = drop_excluded_hs6(leaf)
+        leaf = aggregate_leaf_trade_for_benchmark(path, chunk_rows=chunk_rows, excluded_hs2=excluded_hs2)
         if leaf.empty:
             continue
-        if excluded_hs2:
-            leaf = leaf[~leaf["hs2"].isin(excluded_hs2)].copy()
-            if leaf.empty:
-                continue
         for (reporter_code, year, flow), group in leaf.groupby(["reporter_code", "year", "flow"], sort=True):
             key = (int(reporter_code), int(year), str(flow))
             if key in done:
@@ -441,6 +493,10 @@ def write_memo(
         else ""
     )
     figure_dir_display = figure_dir.relative_to(RESULTS.parent)
+    table_dir_display = EX10_TABLES.relative_to(RESULTS.parent)
+    processed_display = sample_processed_path(
+        f"random_benchmark{('_' + output_tag) if output_tag else ''}_all_years.parquet"
+    ).relative_to(RESULTS.parent)
     memo = f"""# Exercise 10: HS2-Preserving Product Random Benchmark{title_suffix}
 
 Generated: {now_utc()}
@@ -478,9 +534,9 @@ This memo is intentionally descriptive. `exercises.md` should only be updated af
 
 ## Files
 
-- Tables: `results/exercise_10_tables/`
+- Tables: `{table_dir_display}/`
 - Figures: `{figure_dir_display}/`
-- Processed data: `data/processed/random_benchmark{('_' + output_tag) if output_tag else ''}_all_years.parquet`
+- Processed data: `{processed_display}`
 {result_file_note}
 
 ## Note
@@ -499,9 +555,11 @@ def validate(
     paths: BenchmarkPaths,
     excluded_hs2: list[str],
     output_tag: str | None,
+    chunk_rows: int,
 ) -> None:
     check = {
         "created_at_utc": now_utc(),
+        "country_sample": active_sample_name(),
         "benchmark_null": "hs2_preserving_within_sector_random_allocation",
         "policy": "Preserves country-year-flow total trade, HS2 sector totals, and active HS6 product counts within HS2.",
         "output_tag": output_tag,
@@ -514,6 +572,7 @@ def validate(
         "flows": sorted(df["flow"].dropna().unique().tolist()),
         "simulations": simulations,
         "seed": seed,
+        "chunk_rows": int(chunk_rows),
         "hs_bulk_files_seen": files_seen,
         "actual_gini_percentile_min": float(df["actual_gini_percentile"].min()),
         "actual_gini_percentile_max": float(df["actual_gini_percentile"].max()),
@@ -540,8 +599,13 @@ def publish_as_main(paths: BenchmarkPaths) -> None:
     ]
     for src, dst in copies:
         if src.exists():
+            if src.resolve() == dst.resolve():
+                continue
             dst.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(src, dst)
+
+    if paths.figure_dir.resolve() == canonical.figure_dir.resolve():
+        return
 
     canonical.figure_dir.mkdir(parents=True, exist_ok=True)
     for path in canonical.figure_dir.glob("*.png"):
@@ -556,11 +620,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=20260518)
     parser.add_argument("--checkpoint-every", type=int, default=25)
     parser.add_argument("--max-files", type=int, default=None)
+    parser.add_argument("--chunk-rows", type=int, default=DEFAULT_CHUNK_ROWS)
     parser.add_argument("--fresh", action="store_true", help="Remove partial HS2 benchmark checkpoint before running.")
     parser.add_argument("--exclude-hs2", nargs="*", default=[], help="HS2 chapters to remove before running the benchmark, e.g. --exclude-hs2 87.")
     parser.add_argument("--output-tag", default=None, help="Output tag for variant files. Defaults to no_hs<codes> when exclusions are used.")
     parser.add_argument("--write-main", action="store_true", help="Also publish this variant to the canonical Exercise 10 output files.")
-    parser.add_argument("--country-sample", choices=["prof_p_33", "world_broad"], default="prof_p_33")
+    parser.add_argument("--country-sample", choices=COUNTRY_SAMPLE_CHOICES, default="prof_p_33")
     parser.add_argument("--min-available-years", type=int, default=10)
     parser.add_argument("--start-year", type=int, default=1988)
     parser.add_argument("--end-year", type=int, default=None)
@@ -595,6 +660,7 @@ def main() -> None:
         paths=paths,
         excluded_hs2=excluded_hs2,
         output_tag=output_tag,
+        chunk_rows=args.chunk_rows,
         max_files=args.max_files,
     )
     make_figures(df, paths.figure_dir)
@@ -615,6 +681,7 @@ def main() -> None:
         paths=paths,
         excluded_hs2=excluded_hs2,
         output_tag=output_tag,
+        chunk_rows=args.chunk_rows,
     )
     if args.write_main:
         publish_as_main(paths)

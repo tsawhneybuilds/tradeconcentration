@@ -1,13 +1,13 @@
 # Exercise 13: Import Concentration Hypothesis Tests
 
-Generated: 2026-05-22T12:33:07+00:00
+Generated: 2026-05-24T10:30:04+00:00
 
 This memo implements current-data tests for three hypotheses: fixed-cost sourcing, granular product-source corridors, and dominant supplier ecosystems. It uses country-HS6-source-year aggregate import data, not firm customs records, so firm-level conclusions are suggestive.
 
 ## Coverage
 
 - Product-level importer-HS6-year rows: 5,568,474 product-country-year observations across country-years
-- Product-partner-cell country-year rows: 1,130
+- Cell-granularity country-year summary rows: 1,130
 - Classified supplier-ecosystem panel: `data/processed/exercise_13_supplier_ecosystem_panel.parquet`
 - Tables: `results/exercise_13_import_hypotheses_tables/`
 
@@ -38,22 +38,20 @@ This test asks whether top source relationships are persistent and whether produ
 | commodity_outliers          |   19484.0000 |                   0.6773 |                                         0.8333 |                          0.6010 |                        3.0000 |                         0.3522 |                                     0.8832 |
 | excluding_oil_gas_gold_coal | 5246209.0000 |                   0.6902 |                                         0.8516 |                          0.5032 |                        4.0000 |                         0.2135 |                                     0.8934 |
 
-### Selected Fixed-Effect Model Coefficients
+### Fixed-Effect Model Status
 
-| sample                      | model_label                                      | outcome                           | term                                    |   coefficient |   std_error |    nobs |   r2_within |
-|:----------------------------|:-------------------------------------------------|:----------------------------------|:----------------------------------------|--------------:|------------:|--------:|------------:|
-| all_products                | h1_current_top_share                             | within_product_top_supplier_share | lag_within_product_top_supplier_share_z |        0.1018 |      0.0027 | 3633922 |      0.2662 |
-| all_products                | h1_current_top_share                             | within_product_top_supplier_share | log_lag_top_supplier_run_age_z          |        0.0031 |      0.0007 | 3633922 |      0.2662 |
-| excluding_oil_gas_gold_coal | h1_current_top_share                             | within_product_top_supplier_share | lag_within_product_top_supplier_share_z |        0.1018 |      0.0027 | 3620726 |      0.2661 |
-| excluding_oil_gas_gold_coal | h1_current_top_share                             | within_product_top_supplier_share | log_lag_top_supplier_run_age_z          |        0.0031 |      0.0007 | 3620726 |      0.2661 |
-| all_products                | h1_market_size_within_product_top_supplier_share | within_product_top_supplier_share | log_import_value_z                      |       -0.0034 |      0.0037 | 5568474 |      0.0001 |
-| all_products                | h1_market_size_within_product_source_hhi         | within_product_source_hhi         | log_import_value_z                      |       -0.0147 |      0.0044 | 5568474 |      0.0012 |
-| all_products                | h1_market_size_log_supplier_count                | log_supplier_count                | log_import_value_z                      |        0.3504 |      0.0082 | 5568474 |      0.2143 |
-| excluding_oil_gas_gold_coal | h1_market_size_within_product_top_supplier_share | within_product_top_supplier_share | log_import_value_z                      |       -0.0028 |      0.0037 | 5547335 |      0.0000 |
-| excluding_oil_gas_gold_coal | h1_market_size_within_product_source_hhi         | within_product_source_hhi         | log_import_value_z                      |       -0.0141 |      0.0044 | 5547335 |      0.0011 |
-| excluding_oil_gas_gold_coal | h1_market_size_log_supplier_count                | log_supplier_count                | log_import_value_z                      |        0.3505 |      0.0082 | 5547335 |      0.2134 |
+| status                            |   model_term_rows |
+|:----------------------------------|------------------:|
+| residualizer_not_converged        |                16 |
+| outcome_absorbed_by_fixed_effects |                10 |
 
-The saturated LPM for `same_top_supplier` is retained in the CSV for transparency, but its selected fixed effects absorb the usable binary variation. The descriptive persistence rates and the current-share model are the primary current-data evidence for top-source survival.
+### Selected Fixed-Effect Model Coefficients With `status == ok`
+
+Rows with `status != ok` are diagnostic and should not be treated as publication-ready regression evidence until the residualization or absorbed-outcome issue is resolved.
+
+No rows.
+
+The saturated LPM for `same_top_supplier` is retained in the CSV for transparency, but its selected fixed effects absorb the usable binary variation. The descriptive persistence rates are the primary current-data evidence for top-source survival; non-`ok` current-share model rows remain diagnostic until the residualizer is fixed.
 
 Interpretation rule: positive lag-share and age coefficients support sticky sourcing relationships; positive market-size effects on top share/source HHI with weak supplier-count expansion support scale through incumbents.
 
@@ -100,7 +98,7 @@ Interpretation rule: high top-cell shares, positive concentration reductions aft
 
 ## H2: Dominant Supplier Ecosystems
 
-This test separates global supplier dominance from economy-specific sourcing concentration. Global metrics are computed from country-coded source partners only; importer-level concentration uses observed top-source measures.
+This test separates sample-wide supplier dominance from economy-specific sourcing concentration. The source metrics aggregate country-coded source partners across the active reporter sample, not the true all-reporter world; importer-level concentration uses observed top-source measures. The separate H2.4 output is the global H24 benchmark.
 
 ### Latest-Country Median Import Shares By Class
 
@@ -130,7 +128,7 @@ This test separates global supplier dominance from economy-specific sourcing con
 | Australia   | AUS    |   2025 |            0.0112 |             0.1936 |                             0.0003 |                         0.2050 |    0.7819 |
 | Belgium     | BEL    |   2024 |            0.0040 |             0.1834 |                             0.0066 |                         0.1939 |    0.8025 |
 
-Interpretation rule: high `global_dominant` supports supplier ecosystems with few global sources; high `economy_specific` supports country-specific sourcing relationships even when global supply is diversified.
+Interpretation rule: high `global_dominant` means few dominant sources within the active reporter-sample import pool, not necessarily the all-reporter world; high `economy_specific` supports country-specific sourcing relationships even when the sample-wide supply pool is diversified.
 
 ## Gold-Standard Tests Not Run
 

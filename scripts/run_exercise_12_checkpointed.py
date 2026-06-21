@@ -20,6 +20,7 @@ from pathlib import Path
 import pandas as pd
 
 from trade_concentration_pipeline import (
+    COUNTRY_SAMPLE_CHOICES,
     DATA_PROCESSED,
     EX12_FIGURES,
     EX12_TABLES,
@@ -30,11 +31,13 @@ from trade_concentration_pipeline import (
     configure_country_sample,
     drop_excluded_hs6,
     ensure_dirs,
+    exercise_12_accounting_outputs_for_values,
     exercise_12_export_aggregates_for_leaf,
+    exercise_12_headline_decomposition,
     extract_leaf_trade,
-    growth_decomposition,
     hs_bulk_files,
     item_columns_for_dimension,
+    load_btige_cpa_mapping,
     make_exercise_12_figures,
     now_utc,
     product_scope_states,
@@ -95,18 +98,22 @@ def reporter_from_name(path: Path) -> int | None:
 
 def standardize_aggregate_frame(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
-    for col in ["reporter_code", "year", "cmd_code", "partner_code", "trade_value", "dimension"]:
+    for col in ["reporter_code", "year", "classification_code", "cmd_code", "partner_code", "trade_value", "dimension"]:
         if col not in out.columns:
             out[col] = pd.NA
-    out = out[["reporter_code", "year", "cmd_code", "partner_code", "trade_value", "dimension"]].copy()
+    out = out[["reporter_code", "year", "classification_code", "cmd_code", "partner_code", "trade_value", "dimension"]].copy()
     out["reporter_code"] = pd.to_numeric(out["reporter_code"], errors="coerce").astype("Int64")
     out["year"] = pd.to_numeric(out["year"], errors="coerce").astype("Int64")
+    out["classification_code"] = out["classification_code"].astype("string").fillna("")
     out["cmd_code"] = out["cmd_code"].astype("string")
     out["partner_code"] = pd.to_numeric(out["partner_code"], errors="coerce").astype("Int64")
     out["trade_value"] = pd.to_numeric(out["trade_value"], errors="coerce")
     out["dimension"] = out["dimension"].astype("string")
     out = out.dropna(subset=["reporter_code", "year", "trade_value", "dimension"])
-    return drop_excluded_hs6(out)
+    out = out[(out["partner_code"].isna()) | (out["partner_code"] != 0)].copy()
+    product_dependent = out["dimension"].isin(["product", "product_partner_cell"])
+    excluded_code = out["cmd_code"].astype("string").str.extract(r"(\d{1,6})", expand=False).str.zfill(6).eq("999999")
+    return out.loc[~(product_dependent & excluded_code)].copy()
 
 
 def write_partials(max_files: int | None, fresh: bool) -> list[Path]:
@@ -154,6 +161,8 @@ def write_partials(max_files: int | None, fresh: bool) -> list[Path]:
                 "created_at_utc": now_utc(),
                 "mode": "exercise_12_checkpointed_partials",
                 "country_sample": active_sample_name(),
+                "product_excluded_hs6_codes": ["999999"],
+                "partner_concentration_includes_hs6_codes": ["999999"],
                 "raw_files_seen": len(files),
                 "raw_files_attempted": idx,
                 "partials_present": len(list(PARTIAL_DIR.glob("*.parquet"))),
@@ -179,6 +188,7 @@ def write_combined_aggregate_parquet(partials: list[Path]) -> int:
             [
                 ("reporter_code", pa.int64()),
                 ("year", pa.int64()),
+                ("classification_code", pa.string()),
                 ("cmd_code", pa.string()),
                 ("partner_code", pa.int64()),
                 ("trade_value", pa.float64()),
@@ -188,7 +198,13 @@ def write_combined_aggregate_parquet(partials: list[Path]) -> int:
         for idx, partial in enumerate(partials, start=1):
             if not partial.exists():
                 raise FileNotFoundError(f"Missing Exercise 12 partial: {partial}")
-            df = standardize_aggregate_frame(pd.read_parquet(partial))
+            raw = pd.read_parquet(partial)
+            if "classification_code" not in raw.columns:
+                raise RuntimeError(
+                    f"Exercise 12 partial lacks classification_code and cannot be finalized safely: {partial}. "
+                    "Rebuild checkpointed partials with --fresh."
+                )
+            df = standardize_aggregate_frame(raw)
             total_rows += len(df)
             table = pa.Table.from_pandas(df, schema=schema, preserve_index=False)
             if writer is None:
@@ -219,7 +235,10 @@ def read_reporter_values(partials: list[Path], reporter_code: int) -> pd.DataFra
 
 def prepare_dimension_values(values: pd.DataFrame, dimension: str) -> pd.DataFrame:
     item_cols = item_columns_for_dimension(dimension)
-    cols = ["reporter_code", "year", *item_cols, "trade_value"]
+    select_item_cols = [*item_cols]
+    if dimension in {"product", "product_partner_cell"}:
+        select_item_cols = ["classification_code", *select_item_cols]
+    cols = ["reporter_code", "year", *select_item_cols, "trade_value"]
     out = values[values["dimension"] == dimension].copy()
     out = out.dropna(subset=item_cols + ["trade_value"])
     for col in ["reporter_code", "year"]:
@@ -228,7 +247,22 @@ def prepare_dimension_values(values: pd.DataFrame, dimension: str) -> pd.DataFra
         out["partner_code"] = pd.to_numeric(out["partner_code"], errors="coerce").astype(int)
     if "cmd_code" in out.columns:
         out["cmd_code"] = out["cmd_code"].astype(str)
+    if "classification_code" in out.columns:
+        out["classification_code"] = out["classification_code"].fillna("").astype(str)
     return out[cols].copy()
+
+
+def count_partner_code_0_rows(partials: list[Path]) -> int:
+    total = 0
+    for path in partials:
+        if not path.exists():
+            continue
+        try:
+            partner = pd.read_parquet(path, columns=["partner_code"])
+        except Exception:
+            continue
+        total += int((pd.to_numeric(partner["partner_code"], errors="coerce") == 0).sum())
+    return total
 
 
 def finalize(partials: list[Path], source_details: dict) -> None:
@@ -236,9 +270,13 @@ def finalize(partials: list[Path], source_details: dict) -> None:
     reporter_codes = sorted(code for code in {reporter_from_name(path) for path in partials} if code is not None)
     horizons = (5, 10)
 
-    decomposition_rows = []
+    net_rows = []
+    gross_rows = []
     size_transition_rows = []
+    diagnostic_rows = []
+    harmonization_diagnostic_rows = []
     scope_transition_rows = []
+    cpa_mapping = load_btige_cpa_mapping()
     scope_states_path = EX12_TABLES / "product_destination_region_states.csv"
     if scope_states_path.exists():
         scope_states_path.unlink()
@@ -257,18 +295,23 @@ def finalize(partials: list[Path], source_details: dict) -> None:
             if dimension_values.empty:
                 del dimension_values
                 continue
-            decomposition = growth_decomposition(dimension_values, dimension, horizons)
-            if not decomposition.empty:
-                decomposition_rows.append(decomposition)
-            states = transition_matrix(
-                assign_size_states(dimension_values, dimension),
-                item_columns_for_dimension(dimension),
-                "size_state",
+            net, gross, transitions, diagnostics, harmonization_diagnostics = exercise_12_accounting_outputs_for_values(
+                dimension_values,
+                dimension,
                 horizons,
+                cpa_mapping=cpa_mapping,
             )
-            if not states.empty:
-                size_transition_rows.append(states)
-            del decomposition, dimension_values, states
+            if not net.empty:
+                net_rows.append(net)
+            if not gross.empty:
+                gross_rows.append(gross)
+            if not transitions.empty:
+                size_transition_rows.append(transitions)
+            if not diagnostics.empty:
+                diagnostic_rows.append(diagnostics)
+            if not harmonization_diagnostics.empty:
+                harmonization_diagnostic_rows.append(harmonization_diagnostics)
+            del net, gross, transitions, diagnostics, harmonization_diagnostics, dimension_values
 
         product_partner = prepare_dimension_values(values, "product_partner_cell")
         if not product_partner.empty:
@@ -276,8 +319,9 @@ def finalize(partials: list[Path], source_details: dict) -> None:
             if not scope.empty:
                 scope.to_csv(scope_states_path, mode="a", header=not scope_header_written, index=False)
                 scope_header_written = True
+                scope_item_cols = ["product_identity"] if "product_identity" in scope.columns else ["cmd_code"]
                 for state_col in ["destination_state", "region_state"]:
-                    scope_transition = transition_matrix(scope, ["cmd_code"], state_col, horizons)
+                    scope_transition = transition_matrix(scope, scope_item_cols, state_col, horizons)
                     if not scope_transition.empty:
                         scope_transition_rows.append(scope_transition)
                     del scope_transition
@@ -285,20 +329,34 @@ def finalize(partials: list[Path], source_details: dict) -> None:
         del values, product_partner
         gc.collect()
 
-    decomposition = pd.concat(decomposition_rows, ignore_index=True) if decomposition_rows else pd.DataFrame()
+    decomposition = pd.concat(net_rows, ignore_index=True) if net_rows else pd.DataFrame()
+    gross_decomposition = pd.concat(gross_rows, ignore_index=True) if gross_rows else pd.DataFrame()
+    hs_diagnostics = pd.concat(diagnostic_rows, ignore_index=True) if diagnostic_rows else pd.DataFrame()
+    hs_harmonization_diagnostics = (
+        pd.concat(harmonization_diagnostic_rows, ignore_index=True) if harmonization_diagnostic_rows else pd.DataFrame()
+    )
     if not decomposition.empty:
         decomposition = add_country_metadata(decomposition)
-    decomposition.to_parquet(DECOMPOSITION_PARQUET, index=False)
-    decomposition.to_csv(EX12_TABLES / "growth_decomposition.csv", index=False)
+    if not gross_decomposition.empty:
+        gross_decomposition = add_country_metadata(gross_decomposition)
+    if not hs_diagnostics.empty:
+        hs_diagnostics = add_country_metadata(hs_diagnostics)
+    main_decomposition = exercise_12_headline_decomposition(decomposition) if not decomposition.empty else decomposition
+    decomposition.to_csv(EX12_TABLES / "growth_decomposition_net.csv", index=False)
+    gross_decomposition.to_csv(EX12_TABLES / "growth_decomposition_gross.csv", index=False)
+    hs_diagnostics.to_csv(EX12_TABLES / "hs_revision_pair_diagnostics.csv", index=False)
+    hs_harmonization_diagnostics.to_csv(EX12_TABLES / "hs_harmonization_diagnostics.csv", index=False)
+    main_decomposition.to_parquet(DECOMPOSITION_PARQUET, index=False)
+    main_decomposition.to_csv(EX12_TABLES / "growth_decomposition.csv", index=False)
 
     size_transitions = (
         pd.concat(size_transition_rows, ignore_index=True)
         if size_transition_rows
-        else pd.DataFrame(columns=["base_state", "future_state", "size", "horizon", "transition_type"])
+        else pd.DataFrame(columns=["base_state", "future_state", "item_count", "horizon", "transition_type"])
     )
-    size_transitions = size_transitions.groupby(
-        ["base_state", "future_state", "horizon", "transition_type"], as_index=False
-    )["size"].sum()
+    if not size_transitions.empty:
+        size_transitions = add_country_metadata(size_transitions)
+    size_transitions.to_csv(EX12_TABLES / "transition_matrices_detailed.csv", index=False)
     size_transitions.to_csv(EX12_TABLES / "size_transition_matrices.csv", index=False)
 
     scope_transitions = (
@@ -311,20 +369,44 @@ def finalize(partials: list[Path], source_details: dict) -> None:
     )["size"].sum()
     scope_transitions.to_csv(EX12_TABLES / "product_scope_transition_matrices.csv", index=False)
 
-    make_exercise_12_figures(decomposition, size_transitions, scope_transitions)
-    write_exercise_12_memo(decomposition, size_transitions, scope_transitions, source_details)
+    make_exercise_12_figures(main_decomposition, size_transitions, scope_transitions)
+    write_exercise_12_memo(
+        main_decomposition,
+        size_transitions,
+        scope_transitions,
+        source_details,
+        gross_decomposition=gross_decomposition,
+        hs_diagnostics=hs_diagnostics,
+        hs_harmonization_diagnostics=hs_harmonization_diagnostics,
+    )
     write_json(
         RESULTS / "run_manifest_exercise_12_checkpointed.json",
         {
             "created_at_utc": now_utc(),
             "mode": "exercise_12_checkpointed",
             "country_sample": source_details.get("country_sample"),
+            "product_excluded_hs6_codes": ["999999"],
+            "partner_concentration_includes_hs6_codes": ["999999"],
             "hs_bulk_files_processed": len(partials),
             "partial_files": len(list(PARTIAL_DIR.glob("*.parquet"))),
             "combined_aggregate_rows": int(total_aggregate_rows),
-            "rows_decomposition": int(len(decomposition)),
+            "rows_decomposition": int(len(main_decomposition)),
+            "rows_decomposition_net_all": int(len(decomposition)),
+            "rows_decomposition_gross": int(len(gross_decomposition)),
+            "rows_hs_revision_diagnostics": int(len(hs_diagnostics)),
+            "rows_hs_harmonization_diagnostics": int(len(hs_harmonization_diagnostics)),
             "rows_size_transitions": int(len(size_transitions)),
             "rows_scope_transitions": int(len(scope_transitions)),
+            "partner_code_0_rows": count_partner_code_0_rows(partials),
+            "aggregate_schema": [
+                "reporter_code",
+                "year",
+                "classification_code",
+                "cmd_code",
+                "partner_code",
+                "trade_value",
+                "dimension",
+            ],
             "exercises_md_updated": False,
         },
     )
@@ -335,7 +417,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--max-files", type=int, default=None)
     parser.add_argument("--fresh", action="store_true", help="Delete existing per-file Exercise 12 checkpoints first.")
     parser.add_argument("--finalize-only", action="store_true", help="Skip raw processing and finalize from existing checkpoints.")
-    parser.add_argument("--country-sample", choices=["prof_p_33", "world_broad"], default="prof_p_33")
+    parser.add_argument("--country-sample", choices=COUNTRY_SAMPLE_CHOICES, default="rd2_countries")
     parser.add_argument("--min-available-years", type=int, default=10)
     parser.add_argument("--start-year", type=int, default=1988)
     parser.add_argument("--end-year", type=int, default=None)

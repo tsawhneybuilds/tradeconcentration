@@ -8,14 +8,20 @@ aggregate import data and do not claim to prove firm-level mechanisms.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import math
 import re
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from scipy.stats import t as student_t
+
+from concentration_metrics import active_gini, active_loo_gini_contributions
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,6 +36,7 @@ BEC_MAPPING = DATA_PROCESSED / "exercise_03_bec5_mapping_approved.csv"
 
 OUT_TABLES = RESULTS / "exercise_13_import_hypotheses_tables"
 OUT_MEMO = RESULTS / "exercise_13_import_hypotheses.md"
+OUT_MANIFEST = RESULTS / "run_manifest_exercise_13_import_hypotheses.json"
 OUT_CLASSIFIED_PANEL = DATA_PROCESSED / "exercise_13_supplier_ecosystem_panel.parquet"
 
 COMMODITY_OUTLIER_HS4 = {"2701", "2709", "2710", "2711", "7108"}
@@ -39,6 +46,7 @@ GLOBAL_HHI_THRESHOLD = 0.50
 IMPORTER_DOMINANCE_THRESHOLD = 0.75
 IMPORTER_HHI_THRESHOLD = 0.50
 EXCLUDED_HS6_CODES = {"999999"}
+H2_SOURCE_SCOPE = "sample_wide_active_reporter_imports"
 
 
 @dataclass
@@ -52,6 +60,15 @@ class OLSResult:
     nobs: int
     clusters: int
     r2_within: float
+    singleton_dropped: int = 0
+    fe_singleton_rows: int = 0
+    residualizer: str = "iterative_within"
+    residualizer_iterations: int = 0
+    residualizer_max_abs_fe_mean: float = np.nan
+    status: str = "ok"
+    fe_cols: str = ""
+    cluster_col: str = ""
+    se_method: str = "cluster"
 
 
 def ensure_dirs() -> None:
@@ -63,6 +80,39 @@ def rel(path: Path) -> str:
         return str(path.relative_to(ROOT))
     except ValueError:
         return str(path)
+
+
+def file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def source_file_manifest(path: Path) -> dict[str, object]:
+    return {
+        "path": rel(path),
+        "exists": path.exists(),
+        "size_bytes": int(path.stat().st_size) if path.exists() else None,
+        "mtime_utc": datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).isoformat(timespec="seconds")
+        if path.exists()
+        else None,
+        "sha256": file_sha256(path) if path.exists() else None,
+    }
+
+
+def source_dir_manifest(path: Path) -> dict[str, object]:
+    files = sorted(path.glob("*.parquet")) if path.exists() else []
+    latest_mtime = max((file.stat().st_mtime for file in files), default=None)
+    return {
+        "path": rel(path),
+        "exists": path.exists(),
+        "parquet_files": len(files),
+        "latest_mtime_utc": datetime.fromtimestamp(latest_mtime, timezone.utc).isoformat(timespec="seconds")
+        if latest_mtime
+        else None,
+    }
 
 
 def normalize_cmd(series: pd.Series) -> pd.Series:
@@ -102,50 +152,15 @@ def normal_pvalue(t_stat: float) -> float:
     return math.erfc(abs(t_stat) / math.sqrt(2.0))
 
 
-def gini(values: np.ndarray | pd.Series) -> float:
-    arr = np.asarray(values, dtype=float)
-    arr = arr[np.isfinite(arr) & (arr > 0)]
-    if arr.size == 0:
-        return np.nan
-    arr.sort()
-    n = arr.size
-    total = arr.sum()
-    if total <= 0:
-        return np.nan
-    ranks = np.arange(1, n + 1, dtype=float)
-    return float((2 * np.sum(ranks * arr) / (n * total)) - ((n + 1) / n))
+# Keep the legacy local names; these are active-positive by design.
+gini = active_gini
+loo_gini_contributions = active_loo_gini_contributions
 
 
 def gini_without_top(values: np.ndarray, top_indices: np.ndarray) -> float:
     keep = np.ones(values.size, dtype=bool)
     keep[top_indices] = False
     return gini(values[keep])
-
-
-def loo_gini_contributions(values: np.ndarray) -> np.ndarray:
-    order = np.argsort(values, kind="mergesort")
-    sorted_values = values[order]
-    n = sorted_values.size
-    out_sorted = np.full(n, np.nan, dtype=float)
-    total_gini = gini(sorted_values)
-    if n <= 1:
-        out = np.full(n, np.nan, dtype=float)
-        out[order] = out_sorted
-        return out
-    total = float(sorted_values.sum())
-    ranks = np.arange(1, n + 1, dtype=float)
-    weighted_sum = float(np.sum(ranks * sorted_values))
-    suffix_after = total - np.cumsum(sorted_values)
-    total_without = total - sorted_values
-    weighted_without = weighted_sum - ranks * sorted_values - suffix_after
-    valid = total_without > 0
-    n2 = n - 1
-    gini_without = np.full(n, np.nan, dtype=float)
-    gini_without[valid] = (2 * weighted_without[valid] / (n2 * total_without[valid])) - ((n2 + 1) / n2)
-    out_sorted = total_gini - gini_without
-    out = np.full(n, np.nan, dtype=float)
-    out[order] = out_sorted
-    return out
 
 
 def hhi(values: np.ndarray | pd.Series) -> float:
@@ -257,20 +272,92 @@ def weighted_mean(values: pd.Series, weights: pd.Series) -> float:
     return float(np.average(values[mask], weights=weights[mask]))
 
 
-def residualize_matrix(matrix: np.ndarray, fe_codes: list[np.ndarray], max_iter: int = 8) -> np.ndarray:
-    out = matrix.astype(float, copy=True)
-    for _ in range(max_iter):
+def fe_singleton_mask(work: pd.DataFrame, fe_cols: list[str]) -> np.ndarray:
+    if not fe_cols or work.empty:
+        return np.zeros(len(work), dtype=bool)
+    mask = np.zeros(len(work), dtype=bool)
+    for col in fe_cols:
+        counts = work[col].map(work[col].value_counts(dropna=False))
+        mask |= counts.eq(1).to_numpy(dtype=bool)
+    return mask
+
+
+def iterative_singleton_mask(fe_codes: list[np.ndarray]) -> np.ndarray:
+    if not fe_codes:
+        return np.zeros(0, dtype=bool)
+    keep = np.ones(len(fe_codes[0]), dtype=bool)
+    while True:
+        drop = np.zeros(len(keep), dtype=bool)
         for codes in fe_codes:
-            valid = codes >= 0
-            if not valid.any():
+            kept_codes = codes[keep]
+            if kept_codes.size == 0:
                 continue
-            clean_codes = codes[valid]
-            counts = np.bincount(clean_codes).astype(float)
+            counts = np.bincount(kept_codes, minlength=int(codes.max()) + 1)
+            singleton_level = counts == 1
+            drop |= keep & singleton_level[codes]
+        if not drop.any():
+            break
+        keep &= ~drop
+    return ~keep
+
+
+def residualize_matrix(
+    matrix: np.ndarray,
+    fe_codes: list[np.ndarray],
+    max_iter: int = 50,
+    tol: float = 1e-8,
+) -> tuple[np.ndarray, int, float, bool]:
+    out = matrix.astype(float, copy=True)
+    last_max_adjustment = np.inf
+    for iteration in range(1, max_iter + 1):
+        max_adjustment = 0.0
+        for codes in fe_codes:
+            counts = np.bincount(codes).astype(float)
             for col in range(out.shape[1]):
-                sums = np.bincount(clean_codes, weights=out[valid, col], minlength=counts.size)
+                sums = np.bincount(codes, weights=out[:, col], minlength=counts.size)
                 means = np.divide(sums, counts, out=np.zeros_like(sums), where=counts > 0)
-                out[valid, col] -= means[clean_codes]
-    return out
+                adjustments = means[codes]
+                out[:, col] -= adjustments
+                if adjustments.size:
+                    max_adjustment = max(max_adjustment, float(np.nanmax(np.abs(adjustments))))
+        last_max_adjustment = max_adjustment
+        if max_adjustment < tol:
+            return out, iteration, last_max_adjustment, True
+    return out, max_iter, last_max_adjustment, False
+
+
+def empty_ols_result(
+    model_label: str,
+    sample: str,
+    outcome: str,
+    terms: list[str],
+    fe_cols: list[str],
+    cluster_col: str,
+    nobs: int,
+    clusters: int,
+    status: str,
+    singleton_dropped: int = 0,
+    fe_singleton_rows: int = 0,
+) -> OLSResult:
+    k = len(terms)
+    return OLSResult(
+        model_label=model_label,
+        sample=sample,
+        outcome=outcome,
+        terms=terms,
+        beta=np.full(k, np.nan),
+        se=np.full(k, np.nan),
+        nobs=nobs,
+        clusters=clusters,
+        r2_within=np.nan,
+        singleton_dropped=singleton_dropped,
+        fe_singleton_rows=fe_singleton_rows,
+        residualizer="iterative_within",
+        status=status,
+        fe_cols=" + ".join(fe_cols),
+        cluster_col=cluster_col,
+        se_method=f"clustered by {cluster_col}",
+    )
 
 
 def absorb_cluster_ols(
@@ -284,23 +371,93 @@ def absorb_cluster_ols(
 ) -> OLSResult:
     needed = [outcome, *terms, *fe_cols, cluster_col]
     work = df[needed].replace([np.inf, -np.inf], np.nan).dropna().copy()
+    fe_singletons = int(fe_singleton_mask(work, fe_cols).sum())
     if work.empty:
-        k = len(terms)
-        return OLSResult(model_label, sample, outcome, terms, np.full(k, np.nan), np.full(k, np.nan), 0, 0, np.nan)
+        return empty_ols_result(model_label, sample, outcome, terms, fe_cols, cluster_col, 0, 0, "empty_sample")
     yx = work[[outcome, *terms]].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)
     fe_codes = [pd.factorize(work[col], sort=False)[0].astype(np.int64) for col in fe_cols]
-    resid = residualize_matrix(yx, fe_codes)
+    singleton_mask = iterative_singleton_mask(fe_codes)
+    singleton_dropped = int(singleton_mask.sum())
+    if singleton_dropped >= len(work):
+        return empty_ols_result(
+            model_label,
+            sample,
+            outcome,
+            terms,
+            fe_cols,
+            cluster_col,
+            0,
+            0,
+            "all_observations_singletons",
+            singleton_dropped=singleton_dropped,
+            fe_singleton_rows=fe_singletons,
+        )
+    work_kept = work.loc[~singleton_mask].reset_index(drop=True)
+    yx_kept = yx[~singleton_mask]
+    fe_codes_kept = [
+        pd.factorize(codes[~singleton_mask], sort=False)[0].astype(np.int64)
+        for codes in fe_codes
+    ]
+    resid, residualizer_iterations, residualizer_max_abs, residualizer_converged = residualize_matrix(
+        yx_kept,
+        fe_codes_kept,
+    )
     y = resid[:, 0]
     x = resid[:, 1:]
     valid = np.isfinite(y) & np.isfinite(x).all(axis=1)
     y = y[valid]
     x = x[valid]
-    clusters_raw = work.loc[valid, cluster_col]
+    clusters_raw = work_kept.loc[valid, cluster_col]
     cluster_codes = pd.factorize(clusters_raw, sort=False)[0].astype(np.int64)
     nobs, k = x.shape
     clusters = int(cluster_codes.max() + 1) if nobs else 0
     if nobs <= k or k == 0:
-        return OLSResult(model_label, sample, outcome, terms, np.full(k, np.nan), np.full(k, np.nan), nobs, clusters, np.nan)
+        return empty_ols_result(
+            model_label,
+            sample,
+            outcome,
+            terms,
+            fe_cols,
+            cluster_col,
+            nobs,
+            clusters,
+            "insufficient_observations",
+            singleton_dropped=singleton_dropped,
+            fe_singleton_rows=fe_singletons,
+        )
+    tss = float(np.sum(np.square(y - y.mean())))
+    if not np.isfinite(tss) or tss <= 1e-12:
+        return empty_ols_result(
+            model_label,
+            sample,
+            outcome,
+            terms,
+            fe_cols,
+            cluster_col,
+            nobs,
+            clusters,
+            "outcome_absorbed_by_fixed_effects",
+            singleton_dropped=singleton_dropped,
+            fe_singleton_rows=fe_singletons,
+        )
+    x_rank = int(np.linalg.matrix_rank(x))
+    status = "ok" if x_rank == k else "rank_deficient_design"
+    if not residualizer_converged:
+        status = "residualizer_not_converged" if status == "ok" else f"{status};residualizer_not_converged"
+    if x_rank == 0:
+        return empty_ols_result(
+            model_label,
+            sample,
+            outcome,
+            terms,
+            fe_cols,
+            cluster_col,
+            nobs,
+            clusters,
+            "regressors_absorbed_by_fixed_effects",
+            singleton_dropped=singleton_dropped,
+            fe_singleton_rows=fe_singletons,
+        )
     xtx_inv = np.linalg.pinv(x.T @ x)
     beta = xtx_inv @ (x.T @ y)
     err = y - x @ beta
@@ -312,21 +469,50 @@ def absorb_cluster_ols(
     scale = 1.0
     if clusters > 1 and nobs > k:
         scale = (clusters / (clusters - 1)) * ((nobs - 1) / (nobs - k))
-    cov = scale * xtx_inv @ meat @ xtx_inv
-    se = np.sqrt(np.maximum(np.diag(cov), 0))
-    tss = float(np.sum(np.square(y - y.mean())))
+    if clusters <= 1:
+        se = np.full(k, np.nan)
+        status = "insufficient_clusters"
+    else:
+        cov = scale * xtx_inv @ meat @ xtx_inv
+        se = np.sqrt(np.maximum(np.diag(cov), 0))
     rss = float(np.sum(np.square(err)))
     r2 = 1 - rss / tss if tss > 0 else np.nan
-    return OLSResult(model_label, sample, outcome, terms, beta, se, nobs, clusters, r2)
+    return OLSResult(
+        model_label=model_label,
+        sample=sample,
+        outcome=outcome,
+        terms=terms,
+        beta=beta,
+        se=se,
+        nobs=nobs,
+        clusters=clusters,
+        r2_within=r2,
+        singleton_dropped=singleton_dropped,
+        fe_singleton_rows=fe_singletons,
+        residualizer="iterative_within",
+        residualizer_iterations=residualizer_iterations,
+        residualizer_max_abs_fe_mean=residualizer_max_abs,
+        status=status,
+        fe_cols=" + ".join(fe_cols),
+        cluster_col=cluster_col,
+        se_method=f"clustered by {cluster_col}",
+    )
 
 
 def ols_results_to_frame(results: list[OLSResult]) -> pd.DataFrame:
     rows = []
     for result in results:
+        reference_df = result.clusters - 1 if result.clusters > 1 else np.nan
+        critical = student_t.ppf(0.975, reference_df) if np.isfinite(reference_df) and reference_df > 0 else np.nan
         for idx, term in enumerate(result.terms):
             coef = float(result.beta[idx])
             se = float(result.se[idx])
             t_stat = coef / se if se > 0 else np.nan
+            p_value = (
+                2 * student_t.sf(abs(t_stat), reference_df)
+                if np.isfinite(t_stat) and np.isfinite(reference_df) and reference_df > 0
+                else np.nan
+            )
             rows.append(
                 {
                     "sample": result.sample,
@@ -336,12 +522,22 @@ def ols_results_to_frame(results: list[OLSResult]) -> pd.DataFrame:
                     "coefficient": coef,
                     "std_error": se,
                     "t_stat": t_stat,
-                    "p_value": normal_pvalue(t_stat),
-                    "ci_low": coef - 1.96 * se if np.isfinite(se) else np.nan,
-                    "ci_high": coef + 1.96 * se if np.isfinite(se) else np.nan,
+                    "p_value": p_value,
+                    "ci_low": coef - critical * se if np.isfinite(se) and np.isfinite(critical) else np.nan,
+                    "ci_high": coef + critical * se if np.isfinite(se) and np.isfinite(critical) else np.nan,
                     "nobs": result.nobs,
                     "clusters": result.clusters,
+                    "p_value_reference": f"Student t, df={int(reference_df)}" if np.isfinite(reference_df) else "",
+                    "se_method": result.se_method,
+                    "fixed_effects": result.fe_cols,
+                    "cluster_col": result.cluster_col,
+                    "singleton_dropped": result.singleton_dropped,
+                    "fe_singleton_rows": result.fe_singleton_rows,
                     "r2_within": result.r2_within,
+                    "residualizer": result.residualizer,
+                    "residualizer_iterations": result.residualizer_iterations,
+                    "residualizer_max_abs_fe_mean": result.residualizer_max_abs_fe_mean,
+                    "status": result.status,
                 }
             )
     return pd.DataFrame(rows)
@@ -846,8 +1042,9 @@ def build_global_source_metrics(partner_ref: pd.DataFrame) -> pd.DataFrame:
             on=["year", "cmd_code"],
             how="left",
         )
+        metrics["source_scope"] = H2_SOURCE_SCOPE
         outputs.append(metrics)
-        print(f"built global source metrics for {year}", flush=True)
+        print(f"built sample-wide source metrics for {year}", flush=True)
     out = pd.concat(outputs, ignore_index=True)
     out = out.merge(
         partner_ref.rename(
@@ -1075,6 +1272,21 @@ def write_memo(
             "top_10_positive_loo_partner_hhi_contribution",
         ]
     ].median().rename_axis("measure").reset_index(name="median")
+    model_focus_cols = [
+        "sample",
+        "model_label",
+        "outcome",
+        "term",
+        "coefficient",
+        "std_error",
+        "nobs",
+        "clusters",
+        "singleton_dropped",
+        "residualizer_iterations",
+        "residualizer_max_abs_fe_mean",
+        "status",
+        "r2_within",
+    ]
     model_focus = h1_models[
         h1_models["term"].isin(
             [
@@ -1084,7 +1296,15 @@ def write_memo(
             ]
         )
         & h1_models["r2_within"].notna()
-    ][["sample", "model_label", "outcome", "term", "coefficient", "std_error", "nobs", "r2_within"]]
+        & h1_models.get("status", pd.Series("", index=h1_models.index)).eq("ok")
+    ][[col for col in model_focus_cols if col in h1_models.columns]]
+    h1_status_counts = (
+        h1_models.groupby("status", dropna=False)
+        .size()
+        .rename("model_term_rows")
+        .reset_index()
+        .sort_values("model_term_rows", ascending=False)
+    )
 
     lines = [
         "# Exercise 13: Import Concentration Hypothesis Tests",
@@ -1096,7 +1316,7 @@ def write_memo(
         "## Coverage",
         "",
         f"- Product-level importer-HS6-year rows: {int(h4_product_country_year['active_products'].sum()):,} product-country-year observations across country-years",
-        f"- Product-partner-cell country-year rows: {len(h4_cell_country_year):,}",
+        f"- Cell-granularity country-year summary rows: {len(h4_cell_country_year):,}",
         f"- Classified supplier-ecosystem panel: `{rel(OUT_CLASSIFIED_PANEL)}`",
         f"- Tables: `{rel(OUT_TABLES)}/`",
         "",
@@ -1116,11 +1336,17 @@ def write_memo(
         "",
         markdown_table(h1_by_outlier),
         "",
-        "### Selected Fixed-Effect Model Coefficients",
+        "### Fixed-Effect Model Status",
+        "",
+        markdown_table(h1_status_counts, max_rows=8),
+        "",
+        "### Selected Fixed-Effect Model Coefficients With `status == ok`",
+        "",
+        "Rows with `status != ok` are diagnostic and should not be treated as publication-ready regression evidence until the residualization or absorbed-outcome issue is resolved.",
         "",
         markdown_table(model_focus, max_rows=16),
         "",
-        "The saturated LPM for `same_top_supplier` is retained in the CSV for transparency, but its selected fixed effects absorb the usable binary variation. The descriptive persistence rates and the current-share model are the primary current-data evidence for top-source survival.",
+        "The saturated LPM for `same_top_supplier` is retained in the CSV for transparency, but its selected fixed effects absorb the usable binary variation. The descriptive persistence rates are the primary current-data evidence for top-source survival; non-`ok` current-share model rows remain diagnostic until the residualizer is fixed.",
         "",
         "Interpretation rule: positive lag-share and age coefficients support sticky sourcing relationships; positive market-size effects on top share/source HHI with weak supplier-count expansion support scale through incumbents.",
         "",
@@ -1144,7 +1370,7 @@ def write_memo(
         "",
         "## H2: Dominant Supplier Ecosystems",
         "",
-        "This test separates global supplier dominance from economy-specific sourcing concentration. Global metrics are computed from country-coded source partners only; importer-level concentration uses observed top-source measures.",
+        "This test separates sample-wide supplier dominance from economy-specific sourcing concentration. The source metrics aggregate country-coded source partners across the active reporter sample, not the true all-reporter world; importer-level concentration uses observed top-source measures. The separate H2.4 output is the global H24 benchmark.",
         "",
         "### Latest-Country Median Import Shares By Class",
         "",
@@ -1168,7 +1394,7 @@ def write_memo(
             max_rows=12,
         ),
         "",
-        "Interpretation rule: high `global_dominant` supports supplier ecosystems with few global sources; high `economy_specific` supports country-specific sourcing relationships even when global supply is diversified.",
+        "Interpretation rule: high `global_dominant` means few dominant sources within the active reporter-sample import pool, not necessarily the all-reporter world; high `economy_specific` supports country-specific sourcing relationships even when the sample-wide supply pool is diversified.",
         "",
         "## Gold-Standard Tests Not Run",
         "",
@@ -1188,6 +1414,91 @@ def write_memo(
         "- `h2_supplier_ecosystem_top_products_latest.csv`",
     ]
     OUT_MEMO.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def excluded_hs6_count(frame: pd.DataFrame, code_col: str = "cmd_code") -> int:
+    if frame.empty or code_col not in frame.columns:
+        return 0
+    return int(normalize_cmd(frame[code_col]).isin(EXCLUDED_HS6_CODES).sum())
+
+
+def assert_no_excluded_hs6(frame: pd.DataFrame, label: str, code_col: str = "cmd_code") -> None:
+    count = excluded_hs6_count(frame, code_col=code_col)
+    if count:
+        raise RuntimeError(f"{label} contains {count:,} excluded HS6 999999 rows in {code_col}.")
+
+
+def write_run_manifest(
+    args: argparse.Namespace,
+    panel: pd.DataFrame,
+    persist: pd.DataFrame,
+    h1_models: pd.DataFrame,
+    h1_hs2_models: pd.DataFrame,
+    h4_cell_country_year: pd.DataFrame,
+    h4_latest_top_cells: pd.DataFrame,
+    h4_product_country_year: pd.DataFrame,
+    h4_latest_products: pd.DataFrame,
+    global_metrics: pd.DataFrame,
+    h2_panel: pd.DataFrame,
+) -> None:
+    manifest = {
+        "created_at_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "command": " ".join([Path(sys.executable).name, *sys.argv]),
+        "skip_cell_granularity": bool(args.skip_cell_granularity),
+        "skip_global_rebuild": bool(args.skip_global_rebuild),
+        "excluded_hs6_codes": sorted(EXCLUDED_HS6_CODES),
+        "hs6_999999_rows": {
+            "product_panel_input": excluded_hs6_count(panel),
+            "persistence_panel": excluded_hs6_count(persist),
+            "h4_top_cells_latest": excluded_hs6_count(h4_latest_top_cells),
+            "h4_latest_products": excluded_hs6_count(h4_latest_products),
+            "h2_global_source_metrics": excluded_hs6_count(global_metrics),
+            "h2_classified_panel": excluded_hs6_count(h2_panel),
+        },
+        "row_counts": {
+            "product_panel_input": int(len(panel)),
+            "persistence_panel": int(len(persist)),
+            "h1_models": int(len(h1_models)),
+            "h1_hs2_models": int(len(h1_hs2_models)),
+            "h4_cell_country_year": int(len(h4_cell_country_year)),
+            "h4_top_cells_latest": int(len(h4_latest_top_cells)),
+            "h4_product_country_year": int(len(h4_product_country_year)),
+            "h4_latest_products": int(len(h4_latest_products)),
+            "h2_global_source_metrics": int(len(global_metrics)),
+            "h2_classified_panel": int(len(h2_panel)),
+        },
+        "source_scope": {
+            "h2_source_metrics": H2_SOURCE_SCOPE,
+            "h2_source_note": "Legacy `global_*` H2 column names are sample-wide over the active reporter sample, not true all-reporter world supply.",
+        },
+        "source_artifacts": {
+            "product_panel": source_file_manifest(PRODUCT_PANEL),
+            "cell_dir": source_dir_manifest(CELL_DIR),
+            "country_panel": source_file_manifest(COUNTRY_PANEL),
+            "partner_reference": source_file_manifest(PARTNER_REF),
+            "bec_mapping": source_file_manifest(BEC_MAPPING),
+            "h4_cell_country_year_csv": source_file_manifest(OUT_TABLES / "h4_cell_granularity_country_year.csv"),
+            "h4_top_cells_latest_csv": source_file_manifest(OUT_TABLES / "h4_top_cells_latest.csv"),
+            "h2_source_metrics_csv": source_file_manifest(OUT_TABLES / "h2_global_source_metrics.csv"),
+        },
+        "model_status_counts": h1_models.get("status", pd.Series(dtype=object)).value_counts(dropna=False).to_dict(),
+        "hs2_model_status_counts": h1_hs2_models.get("status", pd.Series(dtype=object)).value_counts(dropna=False).to_dict(),
+        "outputs": {
+            "classified_panel": rel(OUT_CLASSIFIED_PANEL),
+            "tables": rel(OUT_TABLES),
+            "memo": rel(OUT_MEMO),
+        },
+        "notes": [
+            "H1/H1 HS2 fixed-effect OLS tables use iterative within-residualization with convergence and singleton diagnostics.",
+            "Cluster p-values and confidence intervals use Student t references with reporter-cluster degrees of freedom.",
+            "HS6 999999 is excluded before product panels, H4 cell/product summaries, H2 sample-wide source metrics, and outputs.",
+            "Columns retaining the `global_` prefix in H2 tables are legacy names for sample-wide source-pool metrics built from the active reporter sample.",
+        ],
+        "exercises_md_updated": False,
+    }
+    if any(int(value) != 0 for value in manifest["hs6_999999_rows"].values()):
+        raise RuntimeError(f"Exercise 13 manifest found excluded HS6 rows: {manifest['hs6_999999_rows']}")
+    OUT_MANIFEST.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def validate_outputs(
@@ -1232,7 +1543,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--skip-global-rebuild",
         action="store_true",
-        help="Reuse h2_global_source_metrics.csv if available.",
+        help="Reuse h2_global_source_metrics.csv if available; this legacy-named table is sample-wide for the active reporter sample.",
     )
     return parser.parse_args()
 
@@ -1245,6 +1556,7 @@ def main() -> None:
     desc = read_product_descriptions()
     print("loading product panel", flush=True)
     panel = read_product_panel()
+    assert_no_excluded_hs6(panel, "Exercise 13 product panel input")
 
     print("running H1 fixed-cost sourcing proxies", flush=True)
     persist = add_top_supplier_lags(panel)
@@ -1267,16 +1579,17 @@ def main() -> None:
 
     global_path = OUT_TABLES / "h2_global_source_metrics.csv"
     if args.skip_global_rebuild and global_path.exists():
-        print("reusing existing H2 global source metrics", flush=True)
+        print("reusing existing H2 sample-wide source metrics", flush=True)
         global_metrics = pd.read_csv(global_path, dtype={"cmd_code": str})
         global_metrics["cmd_code"] = normalize_cmd(global_metrics["cmd_code"])
         global_metrics = drop_excluded_hs6(global_metrics)
     else:
-        print("building H2 global source metrics", flush=True)
+        print("building H2 sample-wide source metrics", flush=True)
         global_metrics = build_global_source_metrics(partner_ref)
 
     print("classifying H2 supplier ecosystems", flush=True)
     h2_panel, h2_summaries = classify_supplier_ecosystems(panel, global_metrics, desc)
+    assert_no_excluded_hs6(h2_panel, "Exercise 13 classified supplier-ecosystem panel")
 
     print("writing tables and memo", flush=True)
     write_tables(
@@ -1304,7 +1617,21 @@ def main() -> None:
         h4_product_country_year,
         h2_summaries,
     )
+    write_run_manifest(
+        args,
+        panel,
+        persist,
+        h1_models,
+        h1_hs2_models,
+        h4_cell_country_year,
+        h4_latest_top_cells,
+        h4_product_country_year,
+        h4_latest_products,
+        global_metrics,
+        h2_panel,
+    )
     print(f"wrote {rel(OUT_MEMO)}", flush=True)
+    print(f"wrote {rel(OUT_MANIFEST)}", flush=True)
 
 
 if __name__ == "__main__":

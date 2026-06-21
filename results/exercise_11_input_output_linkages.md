@@ -1,43 +1,43 @@
 # Exercise 11: Input-Output Linkages
 
-Generated: 2026-05-22T12:16:57+00:00
+Generated: 2026-05-26T04:13:46+00:00
 
 This memo is intentionally descriptive. `exercises.md` should only be updated after discussion.
 
 ## Coverage
 
-- Imported input concentration rows: 86990
-- Top export sector exposure rows: 35571
-- Country-year summary rows: 1128
-- Countries: 33
+- Imported input concentration rows: 142593
+- Top export sector exposure rows: 57859
+- Country-year summary rows: 1911
+- Countries: 60
 - Years: 1988-2025
-- Source details: `{"approved_bec_mapping": "data/processed/exercise_03_bec5_mapping_approved.csv", "chunk_rows": 500000, "finalize_only": false, "mode": "checkpointed_streaming", "partial_dir": "data/processed/exercise_11_file_aggregates", "partial_files": {"export_sectors": 1130, "import_cells": 1130, "mapping_coverage": 1130}}`
+- Source details: `{"approved_bec_mapping": "data/processed/exercise_03_bec5_mapping_approved.csv", "chunk_rows": 100000, "finalize_only": false, "mode": "checkpointed_streaming", "partial_dir": "data/processed/samples/rd2_countries/checkpoints/exercise_11_file_aggregates", "partial_files": {"export_sectors": 1931, "import_cells": 1931, "mapping_coverage": 1931}}`
 
 ## Import Concentration By BEC Bin
 
 | import_bin            |   rows |   median_product_gini |   median_top_supplier_share |   median_source_hhi |
 |:----------------------|-------:|----------------------:|----------------------------:|--------------------:|
-| capital_goods         |  13979 |                0.6745 |                      0.3608 |              0.2001 |
-| energy                |   8798 |                0.4027 |                      0.4707 |              0.3129 |
-| final_consumption     |  22462 |                0.6602 |                      0.3243 |              0.1706 |
-| intermediates         |  28587 |                0.7479 |                      0.2836 |              0.1415 |
-| unmapped_or_ambiguous |  13164 |                0.4631 |                      0.409  |              0.2489 |
+| capital_goods         |  22285 |                0.686  |                      0.3788 |              0.2145 |
+| energy                |  14310 |                0.3976 |                      0.5254 |              0.3681 |
+| final_consumption     |  36515 |                0.6748 |                      0.3607 |              0.1994 |
+| intermediates         |  48042 |                0.7693 |                      0.3159 |              0.1665 |
+| unmapped_or_ambiguous |  21441 |                0.4623 |                      0.4544 |              0.2915 |
 
 ## Top Export Sector Imported-Input Exposure
 
 |                                             |   median_country_year |
 |:--------------------------------------------|----------------------:|
-| weighted_top_sector_input_product_gini      |                0.762  |
-| weighted_top_sector_top_supplier_share      |                0.2854 |
-| weighted_top_sector_source_hhi              |                0.1494 |
-| median_top_sector_matched_requirement_share |                0.1062 |
+| weighted_top_sector_input_product_gini      |                0.7685 |
+| weighted_top_sector_top_supplier_share      |                0.2899 |
+| weighted_top_sector_source_hhi              |                0.1542 |
+| median_top_sector_matched_requirement_share |                0.0613 |
 
 ## Median Mapping Coverage
 
 | flow    | io_mapping_status    |   trade_value_share |
 |:--------|:---------------------|--------------------:|
 | Exports | mapped_version_exact |              1      |
-| Imports | mapped_version_exact |              0.0424 |
+| Imports | mapped_version_exact |              0.0427 |
 
 ## Files
 
