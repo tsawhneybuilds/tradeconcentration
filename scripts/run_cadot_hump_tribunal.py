@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Cadot-style export reconcentration mechanism tribunal for rd2 countries.
+"""Cadot-style export reconcentration mechanism tribunal.
 
-The runner assembles existing rd2 concentration, world-relative, commodity,
-HS2 benchmark, and Exercise 12 HS4 transition artifacts into one forensic
-workspace. It is descriptive: the development hump is not treated as a causal
+The default is the full ``cadot_broad_156`` sample. The legacy
+``rd2_countries`` implementation remains available explicitly for comparison.
+The tribunal is descriptive: the development hump is not treated as a causal
 effect of income.
 """
 
@@ -39,6 +39,7 @@ from trade_concentration_pipeline import sample_processed_dir, sample_results_di
 
 
 COUNTRY_SAMPLE = "rd2_countries"
+BROAD_COUNTRY_SAMPLE = "cadot_broad_156"
 FLOW = "Exports"
 EXCLUDED_HS6_CODES = {"999999"}
 SECTION_16_HS2 = {"84", "85"}
@@ -1220,7 +1221,7 @@ Use the outputs as a first-pass descriptive tribunal, not as final causal eviden
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--country-sample", default=COUNTRY_SAMPLE)
+    parser.add_argument("--country-sample", default=BROAD_COUNTRY_SAMPLE)
     parser.add_argument("--start-year", type=int, default=2000)
     parser.add_argument("--end-year", type=int, default=2024)
     parser.add_argument("--appendix-start-year", type=int, default=1988)
@@ -1231,8 +1232,16 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.country_sample == BROAD_COUNTRY_SAMPLE:
+        from run_cadot_hump_tribunal_broad import run as run_broad_tribunal
+
+        run_broad_tribunal(args.start_year, args.end_year, args.horizon)
+        return
     if args.country_sample != COUNTRY_SAMPLE:
-        raise RuntimeError("Cadot hump tribunal is currently implemented for rd2_countries only.")
+        raise RuntimeError(
+            f"Cadot hump tribunal supports {BROAD_COUNTRY_SAMPLE} and {COUNTRY_SAMPLE}; "
+            f"received {args.country_sample}."
+        )
     if args.horizon != MAIN_HORIZON:
         raise RuntimeError("Only the 5-year tribunal horizon is currently supported.")
 

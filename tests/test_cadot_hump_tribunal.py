@@ -4,6 +4,7 @@ import math
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,6 +13,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import run_cadot_hump_tribunal as cadot
+import run_cadot_hump_tribunal_broad as broad
 
 
 def test_normalize_hs6_and_exclude_999999_before_product_aggregation() -> None:
@@ -89,3 +91,48 @@ def test_positive_mismatch_means_country_is_above_product_prody() -> None:
     assert out["mismatch_log_gni_minus_prody"].iloc[0] == 2.0
     assert out["rich_side_ct"].iloc[0] == 1
     assert out["exit_next_window"].iloc[0] == 1
+
+
+def test_broad_rich_side_falls_back_to_sample_p75_when_turning_point_is_outside_support() -> None:
+    panel = pd.DataFrame({cadot.INCOME_ALIAS_COL: np.log([10_000, 20_000, 30_000, 40_000, 50_000])})
+    models = pd.DataFrame(
+        {
+            "metric": ["product_theil_fixed_universe"],
+            "model_label": ["quadratic_controls_year_fe_country_cluster"],
+            "turning_point_log_income_pc": [math.log(500_000)],
+        }
+    )
+    threshold = broad.choose_rich_side_threshold(models, panel)
+
+    assert threshold["rich_side_source"] == "sample_income_p75_fallback"
+    assert math.isclose(threshold["rich_side_ppp_constant_2021_intl_usd_used"], 40_000)
+
+
+def test_broad_episode_definition_uses_fixed_universe_product_theil() -> None:
+    assert broad.PRIMARY_EPISODE_METRIC == "product_theil"
+
+
+def test_standard_prody_uses_export_basket_shares_and_income_levels() -> None:
+    products = pd.DataFrame(
+        {
+            "reporter_code": [1, 1, 2, 2, 3, 3],
+            "year": [2000] * 6,
+            "product_id": ["HS1992:010100", "HS1992:020100"] * 3,
+            "trade_value": [80.0, 20.0, 10.0, 90.0, 40.0, 60.0],
+        }
+    )
+    controls = pd.DataFrame(
+        {
+            "reporter_code": [1, 2, 3],
+            "year": [2000] * 3,
+            broad.ppp.PPP_VALUE_COL: [10_000.0, 20_000.0, 40_000.0],
+            broad.ppp.PPP_LOG_COL: np.log([10_000.0, 20_000.0, 40_000.0]),
+        }
+    )
+    product_year, country = broad.build_prody_bridge(products, controls)
+    row = product_year[product_year["product_id"].eq("HS1992-HS4:0101")].iloc[0]
+    expected = (0.8 * 10_000 + 0.1 * 20_000 + 0.4 * 40_000) / (0.8 + 0.1 + 0.4)
+
+    assert math.isclose(row["prody_income_level_full"], expected)
+    assert country["prody_income_level_full"].notna().all()
+    assert broad.PRIMARY_PRODY_SPEC == "world_broad_full_level"
