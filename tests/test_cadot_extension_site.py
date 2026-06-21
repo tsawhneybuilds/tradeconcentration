@@ -10,6 +10,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import build_trade_gini_site as site
+import update_legacy_cadot_page as legacy_page
 
 
 class CadotExtensionSiteTests(unittest.TestCase):
@@ -115,6 +116,15 @@ class CadotExtensionSiteTests(unittest.TestCase):
         self.assertIn("Historical 13-entity exercise", body)
         self.assertIn("How to interpret the exit-cone image", body)
         self.assertIn(f"?v={site.CADOT_PAGE_ASSET_VERSION}", body)
+
+    def test_legacy_cadot_update_preserves_newer_nested_sections(self) -> None:
+        section = (
+            "<!-- PRODUCTION_CORE_OLD_CONE_START -->"
+            "<section id=\"new-analysis\">keep me</section>"
+            "<!-- PRODUCTION_CORE_OLD_CONE_END -->"
+        )
+        html = f"<main><p>old body</p>{section}</main>"
+        self.assertEqual(legacy_page.extract_preserved_sections(html), [section])
 
 
 if __name__ == "__main__":

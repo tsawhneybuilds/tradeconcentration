@@ -31,6 +31,24 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def extract_preserved_sections(html: str) -> list[str]:
+    sections: list[str] = []
+    for start_marker, end_marker in [
+        (
+            "<!-- PRODUCTION_CORE_OLD_CONE_START -->",
+            "<!-- PRODUCTION_CORE_OLD_CONE_END -->",
+        ),
+    ]:
+        pattern = re.compile(
+            rf"{re.escape(start_marker)}.*?{re.escape(end_marker)}",
+            flags=re.DOTALL,
+        )
+        match = pattern.search(html)
+        if match:
+            sections.append(match.group(0))
+    return sections
+
+
 def update_page(output: Path) -> None:
     site.configure_site_sample("cadot_broad_156")
     data = site.load_cadot_hump_data()
@@ -40,10 +58,14 @@ def update_page(output: Path) -> None:
     if not page_path.exists():
         raise FileNotFoundError(f"Legacy Cadot page is missing: {page_path}")
     html = page_path.read_text(encoding="utf-8")
+    preserved_sections = extract_preserved_sections(html)
     main_pattern = re.compile(r"<main>.*?</main>", flags=re.DOTALL)
     if len(main_pattern.findall(html)) != 1:
         raise RuntimeError("Expected exactly one <main> block in the legacy Cadot page.")
-    html = main_pattern.sub(f"<main>\n{body}\n  </main>", html)
+    preserved_html = "\n\n".join(preserved_sections)
+    if preserved_html:
+        preserved_html = f"\n\n  {preserved_html}\n"
+    html = main_pattern.sub(f"<main>\n{body}{preserved_html}  </main>", html)
     html = re.sub(
         r"<title>.*?</title>",
         "<title>Cadot Replication Results</title>",
