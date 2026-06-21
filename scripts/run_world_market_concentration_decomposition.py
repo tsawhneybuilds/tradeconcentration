@@ -24,6 +24,7 @@ import json
 import math
 import re
 import shutil
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -2071,6 +2072,13 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=OUTPUT_DIR)
     parser.add_argument(
+        "--benchmark-basket",
+        choices=["row_exports", "row_imports", "both"],
+        default="both",
+        help="Reference basket(s) to build. The focal basket is always country exports.",
+    )
+    parser.add_argument("--import-workers", type=int, default=3)
+    parser.add_argument(
         "--publish-dir",
         type=Path,
         default=None,
@@ -2081,6 +2089,19 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    if args.benchmark_basket == "row_imports":
+        command = [
+            sys.executable,
+            str(SCRIPTS / "run_import_demand_decomposition.py"),
+            "--benchmark-basket",
+            "row_imports",
+            "--workers",
+            str(args.import_workers),
+        ]
+        if args.publish_dir is not None:
+            command.extend(["--publish-dir", str(args.publish_dir)])
+        subprocess.run(command, cwd=ROOT, check=True)
+        return
     args.output_dir.mkdir(parents=True, exist_ok=True)
     country, world, controls, concentration, mapping, alignment_audit = load_inputs(
         args.output_dir
@@ -2170,6 +2191,19 @@ def main() -> None:
 
     if args.publish_dir is not None:
         publish_outputs(args.publish_dir, args.output_dir)
+
+    if args.benchmark_basket == "both":
+        command = [
+            sys.executable,
+            str(SCRIPTS / "run_import_demand_decomposition.py"),
+            "--benchmark-basket",
+            "row_imports",
+            "--workers",
+            str(args.import_workers),
+        ]
+        if args.publish_dir is not None:
+            command.extend(["--publish-dir", str(args.publish_dir)])
+        subprocess.run(command, cwd=ROOT, check=True)
 
     print(f"Wrote decomposition outputs to {args.output_dir}")
 
