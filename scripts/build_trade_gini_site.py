@@ -689,6 +689,7 @@ CADOT_INTEGRATED_FIGURE_FILES = {
         CADOT_BROAD_TRIBUNAL_FIGURE_DIR / "old_cone_exit_plot.png"
     ),
 }
+CADOT_PAGE_ASSET_VERSION = "broad156-20260621b"
 CADOT_INTEGRATED_EXTRA_DOWNLOADS = {
     "cadot-replication.md": ROOT / "cadot-replication.md",
     "cadot_final_interpretation_report.md": (
@@ -5077,7 +5078,7 @@ def build_cadot_integrated_body(data: dict[str, Any]) -> str:
         <p><strong>Current econometric interpretation:</strong> Cadot captures a real equilibrium relationship across country types in product space. Our evidence does not support a universal within-country development sequence or a predominantly extensive-margin exit mechanism. Persistent differences in scale, comparative advantage, sectoral specialization, global-product demand, institutions, and trade-hub status explain much of the pooled shape.</p>
       </div>
       <div class="figure-row full-width">
-        <figure><a class="figure-link" href="assets/figures/cadot_export_gini_theil_fits.png"><img src="assets/figures/cadot_export_gini_theil_fits.png" alt="Export Gini and Theil against real GDP per capita with linear, quadratic, and nonparametric fits"></a><figcaption>Question: does modern export concentration bend upward at high income? The quadratic does; the nonparametric fit is flatter in the sparse rich tail.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/cadot_export_gini_theil_fits.png?v={CADOT_PAGE_ASSET_VERSION}"><img src="assets/figures/cadot_export_gini_theil_fits.png?v={CADOT_PAGE_ASSET_VERSION}" alt="Broad 156 export Gini and Theil against real GDP per capita with linear, quadratic, and nonparametric fits"></a><figcaption>Broad 156 sample: does modern export concentration bend upward at high income? The quadratic does; the nonparametric fit is flatter in the sparse rich tail.</figcaption></figure>
       </div>
       <div class="download-grid compact-downloads">
         <a href="assets/downloads/cadot_final_interpretation_report.md">Detailed interpretation report</a>
@@ -5094,8 +5095,8 @@ def build_cadot_integrated_body(data: dict[str, Any]) -> str:
       </div>
       <div class="table-scroll">{broad_table}</div>
       <div class="figure-row">
-        <figure><a class="figure-link" href="assets/figures/cadot_broad_ppp_hump_level.png"><img src="assets/figures/cadot_broad_ppp_hump_level.png" alt="Broad 156 level-PPP concentration curves"></a><figcaption>Level-PPP results: export turning points lie at or beyond the central rich-country support.</figcaption></figure>
-        <figure><a class="figure-link" href="assets/figures/cadot_broad_ppp_hump_log.png"><img src="assets/figures/cadot_broad_ppp_hump_log.png" alt="Broad 156 log-PPP concentration curves"></a><figcaption>Log-PPP stress test: export product results weaken or move outside support.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/cadot_broad_ppp_hump_level.png?v={CADOT_PAGE_ASSET_VERSION}"><img src="assets/figures/cadot_broad_ppp_hump_level.png?v={CADOT_PAGE_ASSET_VERSION}" alt="Broad 156 level-PPP concentration curves"></a><figcaption>Broad 156 level-PPP results: export turning points lie at or beyond the central rich-country support.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/cadot_broad_ppp_hump_log.png?v={CADOT_PAGE_ASSET_VERSION}"><img src="assets/figures/cadot_broad_ppp_hump_log.png?v={CADOT_PAGE_ASSET_VERSION}" alt="Broad 156 log-PPP concentration curves"></a><figcaption>Broad 156 log-PPP stress test: export product results weaken or move outside support.</figcaption></figure>
       </div>
       <h3 class="subsection-title">Where the variation comes from</h3>
       <div class="table-scroll">{variance_table}</div>
@@ -5124,8 +5125,8 @@ def build_cadot_integrated_body(data: dict[str, Any]) -> str:
       </div>
       <div class="table-scroll">{historical_table}</div>
       <div class="figure-row">
-        <figure><a class="figure-link" href="assets/figures/cadot_historical_baseline_u_shape.png"><img src="assets/figures/cadot_historical_baseline_u_shape.png" alt="Historical partner concentration baseline U-shape tests"></a><figcaption>None of the six preferred within-country tests passes the formal wild-cluster-bootstrap U-shape test.</figcaption></figure>
-        <figure><a class="figure-link" href="assets/figures/cadot_historical_sensitivity.png"><img src="assets/figures/cadot_historical_sensitivity.png" alt="Historical partner concentration sensitivity U-shape tests"></a><figcaption>Across {historical_test_count} preferred within-country variant tests, zero is classified as a supported U-shape.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/cadot_historical_baseline_u_shape.png?v={CADOT_PAGE_ASSET_VERSION}"><img src="assets/figures/cadot_historical_baseline_u_shape.png?v={CADOT_PAGE_ASSET_VERSION}" alt="Historical 13-entity partner concentration baseline U-shape tests"></a><figcaption>Historical 13-entity exercise: none of the six preferred within-country tests passes the formal wild-cluster-bootstrap U-shape test.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/cadot_historical_sensitivity.png?v={CADOT_PAGE_ASSET_VERSION}"><img src="assets/figures/cadot_historical_sensitivity.png?v={CADOT_PAGE_ASSET_VERSION}" alt="Historical 13-entity partner concentration sensitivity U-shape tests"></a><figcaption>Historical 13-entity exercise: across {historical_test_count} preferred within-country variant tests, zero is classified as a supported U-shape.</figcaption></figure>
       </div>
       <div class="note">
         <p><strong>Scope:</strong> This is a long-run boundary test of concentration across partners. It is not a product-level historical replication. USSR and the Russian Federation remain separate entities, and the sensitivity grid includes war exclusions, pre/post-1948 source regimes, partner-count thresholds, common-partner blocks, rank truncation, synthetic censoring, and leave-one-entity-out checks.</p>
@@ -5145,13 +5146,14 @@ def build_cadot_integrated_body(data: dict[str, Any]) -> str:
       </div>
       <div class="table-scroll">{mechanism_table}</div>
       <div class="figure-row">
-        <figure><a class="figure-link" href="assets/figures/cadot_broad_mechanism_scorecard.png"><img src="assets/figures/cadot_broad_mechanism_scorecard.png" alt="Broad 156 Cadot mechanism scorecard"></a><figcaption>Continuing-product superstar scaling accompanies 72.2% of 1,312 reconcentration episodes; old-cone pruning is flagged in 5.4%.</figcaption></figure>
-        <figure><a class="figure-link" href="assets/figures/cadot_broad_old_cone_exit.png"><img src="assets/figures/cadot_broad_old_cone_exit.png" alt="Broad 156 old-cone product exit evidence"></a><figcaption>Old-cone-consistent exit remains statistically detectable, but it is not the dominant episode classification.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/cadot_broad_mechanism_scorecard.png?v={CADOT_PAGE_ASSET_VERSION}"><img src="assets/figures/cadot_broad_mechanism_scorecard.png?v={CADOT_PAGE_ASSET_VERSION}" alt="Broad 156 Cadot mechanism scorecard"></a><figcaption>Broad 156 sample: continuing-product superstar scaling accompanies 72.2% of 1,312 reconcentration episodes; old-cone pruning is flagged in 5.4%.</figcaption></figure>
+        <figure><a class="figure-link" href="assets/figures/cadot_broad_old_cone_exit.png?v={CADOT_PAGE_ASSET_VERSION}"><img src="assets/figures/cadot_broad_old_cone_exit.png?v={CADOT_PAGE_ASSET_VERSION}" alt="Broad 156 old-cone product exit evidence"></a><figcaption>Broad 156 sample. The x-axis is log(country GDP per capita / product PRODY): zero means the country's income matches the typical exporters of that product, while a positive value means the product is associated with poorer exporters and is therefore an “old-cone” candidate. On the rich side, exit rises with this mismatch. Read the slope difference, not the raw vertical gap.</figcaption></figure>
       </div>
       <h3 class="subsection-title">Old-Cone Exit Regression</h3>
       <div class="table-scroll">{old_cone_table}</div>
       <div class="note">
-        <p><strong>Trust status:</strong> Mostly trustworthy for descriptive use after local adversarial review. The old-cone interaction is positive, but overlapping windows, generated PRODY, common product shocks, and one-way reporter clustering prevent a causal interpretation. The tribunal's own log-income turning point is outside support, so its rich-side mechanism split uses the observed income p75 as a labeled fallback.</p>
+        <p><strong>How to interpret the exit-cone image:</strong> Products are grouped by their income mismatch. A value of +1 means the country's GDP per capita is about 2.7 times the product's PRODY. The orange line covers country-years above the sample income p75, approximately $39,308 in constant-2021 PPP dollars. Its upward right tail says that, among these richer country-years, products increasingly below the country's income level are more likely to disappear from the export basket within five years. The controlled mismatch × rich-side interaction is +3.25 percentage points per +1 log mismatch (reporter-clustered raw p&lt;0.001).</p>
+        <p><strong>What it does not say:</strong> Rich countries do not have higher exit rates at every mismatch—the raw orange line is generally below the gray line. The evidence supports a differential slope conditional on reporter, product, and base-year fixed effects, not a causal level comparison. Overlapping windows, generated PRODY, common product shocks, and one-way reporter clustering remain limitations. The estimated log-income turning point is outside support, so “rich side” uses the observed income p75 as a labeled fallback.</p>
       </div>
       <div class="download-grid compact-downloads">
         <a href="assets/downloads/cadot_broad_mechanism_scorecard_summary.csv">Mechanism scorecard</a>

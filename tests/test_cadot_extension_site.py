@@ -94,6 +94,28 @@ class CadotExtensionSiteTests(unittest.TestCase):
         self.assertIn("Exposure", nav)
         self.assertIn('href="exposure/"', nav)
 
+    def test_integrated_cadot_page_uses_broad_156_modern_assets(self) -> None:
+        for path in site.CADOT_BROAD_PPP_FIGURE_FILES.values():
+            self.assertIn("cadot_broad_156", path.parts)
+        for key in [
+            "cadot_export_gini_theil_fits",
+            "cadot_broad_mechanism_scorecard",
+            "cadot_broad_old_cone_exit",
+        ]:
+            self.assertIn(
+                "cadot_broad_156", site.CADOT_INTEGRATED_FIGURE_FILES[key].parts
+            )
+
+    def test_integrated_cadot_body_labels_samples_and_cache_busts_figures(self) -> None:
+        site.configure_site_sample("cadot_broad_156")
+        body = site.build_cadot_integrated_body(site.load_cadot_hump_data())
+        self.assertNotIn("rd2 Balanced", body)
+        self.assertNotIn("55-country", body)
+        self.assertIn("Broad 156 sample", body)
+        self.assertIn("Historical 13-entity exercise", body)
+        self.assertIn("How to interpret the exit-cone image", body)
+        self.assertIn(f"?v={site.CADOT_PAGE_ASSET_VERSION}", body)
+
 
 if __name__ == "__main__":
     unittest.main()
